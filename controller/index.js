@@ -1,0 +1,15 @@
+module.exports = {
+  AdminAuthController: require('./admin/AdminAuthController'),
+  AgencyController: require('./admin/AgencyController'),
+  SubscriptionPlanController: require('./admin/SubscriptionPlanController'),
+  InvitationController: require('./admin/InvitationController'),
+  RegistrationController: require('./registration/RegistrationController'),
+  HrStaffController: require('./agency/HrStaffController'),
+  HiringPipelineController: require('./agency/HiringPipelineController'),
+  JobPostController: require('./agency/JobPostController'),
+  CandidateApplicationController: require('./agency/CandidateApplicationController'),
+  AgencyCaregiverController: require('./agency/AgencyCaregiverController'),
+  ClientController: require('./agency/ClientController'),
+  CarePlanController: require('./agency/CarePlanController'),
+  CaregiverController: require('./caregiver/CaregiverController'),
+};

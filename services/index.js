@@ -1,0 +1,13 @@
+module.exports.AdminAuthService = require('./admin/adminAuth.service');
+module.exports.AgencyService = require('./admin/agency.service');
+module.exports.SubscriptionPlanService = require('./admin/subscriptionPlan.service');
+module.exports.InvitationService = require('./admin/invitation.service');
+module.exports.RegistrationService = require('./registration/registration.service');
+module.exports.HrStaffService = require('./agency/hrStaff.service');
+module.exports.HiringPipelineService = require('./agency/hiringPipeline.service');
+module.exports.JobPostService = require('./agency/jobPost.service');
+module.exports.CandidateApplicationService = require('./agency/candidateApplication.service');
+module.exports.AiJobContentService = require('./agency/aiJobContent.service');
+module.exports.AgencyCaregiverService = require('./agency/agencyCaregiver.service');
+module.exports.ClientService = require('./agency/client.service');
+module.exports.CarePlanService = require('./agency/carePlan.service');

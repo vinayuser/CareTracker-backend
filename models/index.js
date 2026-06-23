@@ -1,0 +1,15 @@
+module.exports = {
+  AdminModel: require('./Admin/AdminModel'),
+  SubscriptionPlanModel: require('./SubscriptionPlanModel'),
+  AgencyModel: require('./AgencyModel'),
+  InvitationModel: require('./InvitationModel'),
+  AgencyAccountModel: require('./AgencyAccountModel'),
+  HrStaffModel: require('./HrStaffModel'),
+  DocumentModel: require('./DocumentModel'),
+  AgencyStageModel: require('./AgencyStageModel'),
+  JobPostModel: require('./JobPostModel'),
+  CandidateModel: require('./CandidateModel'),
+  CandidateApplicationModel: require('./CandidateApplicationModel'),
+  ClientModel: require('./ClientModel'),
+  CarePlanModel: require('./CarePlanModel'),
+};

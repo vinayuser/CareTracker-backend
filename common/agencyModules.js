@@ -1,0 +1,52 @@
+const OWNER_ONLY_MODULES = [
+  'AGENCY_HR_STAFF',
+  'AGENCY_USERS',
+  'AGENCY_ROLES',
+  'AGENCY_SETTINGS',
+  'AGENCY_BILLING',
+];
+
+const HR_ASSIGNABLE_MODULES = [
+  'AGENCY_DASHBOARD',
+  'AGENCY_CLIENTS',
+  'AGENCY_ASSESSMENTS',
+  'AGENCY_CARE_PLANS',
+  'AGENCY_SERVICE_NOTES',
+  'AGENCY_MEDICATIONS',
+  'AGENCY_EMAR',
+  'AGENCY_SCHEDULE',
+  'AGENCY_VISIT_CALENDAR',
+  'AGENCY_SHIFT_MANAGEMENT',
+  'AGENCY_TIME_ATTENDANCE',
+  'AGENCY_CAREGIVERS',
+  'AGENCY_CAREGIVER_MATCHING',
+  'AGENCY_HIRING_PIPELINE',
+  'AGENCY_JOBS',
+  'AGENCY_CANDIDATES',
+  'AGENCY_TASKS',
+  'AGENCY_INCIDENTS',
+  'AGENCY_REPORTS',
+];
+
+const DEFAULT_HR_MODULES = [
+  'AGENCY_DASHBOARD',
+  'AGENCY_CAREGIVERS',
+  'AGENCY_HIRING_PIPELINE',
+  'AGENCY_JOBS',
+  'AGENCY_CANDIDATES',
+  'AGENCY_TASKS',
+];
+
+const sanitizeModuleAccess = (modules) => {
+  if (!Array.isArray(modules)) return [...DEFAULT_HR_MODULES];
+  const allowed = new Set(HR_ASSIGNABLE_MODULES);
+  const unique = [...new Set(modules.filter((key) => allowed.has(key)))];
+  return unique.length > 0 ? unique : [...DEFAULT_HR_MODULES];
+};
+
+module.exports = {
+  OWNER_ONLY_MODULES,
+  HR_ASSIGNABLE_MODULES,
+  DEFAULT_HR_MODULES,
+  sanitizeModuleAccess,
+};
