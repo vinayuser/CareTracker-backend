@@ -11,5 +11,6 @@ module.exports = {
   CandidateModel: require('./CandidateModel'),
   CandidateApplicationModel: require('./CandidateApplicationModel'),
   ClientModel: require('./ClientModel'),
+  ClientAssessmentModel: require('./ClientAssessmentModel'),
   CarePlanModel: require('./CarePlanModel'),
 };

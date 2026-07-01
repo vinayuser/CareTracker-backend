@@ -13,6 +13,14 @@ module.exports.generateInviteToken = function () {
   return `inv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
+module.exports.getFrontendUrl = function () {
+  return (process.env.FRONTEND_URL || 'http://localhost:5173').trim().replace(/\/+$/, '');
+};
+
+module.exports.buildInviteUrl = function (token) {
+  return `${module.exports.getFrontendUrl()}/register?token=${encodeURIComponent(token)}`;
+};
+
 module.exports.toClientDoc = (doc) => {
   if (!doc) return null;
   const obj = typeof doc.toJSON === 'function' ? doc.toJSON() : { ...doc };

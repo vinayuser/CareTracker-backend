@@ -30,13 +30,23 @@ const AssessmentSchema = new mongoose.Schema(
 const CarePlanSchema = new mongoose.Schema(
   {
     agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Agency', required: true, index: true },
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true, index: true },
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', index: true },
+    assessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ClientAssessment', default: null },
     planCode: { type: String, required: true },
     status: {
       type: String,
       enum: ['Draft', 'Active', 'Archived'],
-      default: 'Active',
+      default: 'Draft',
     },
+    quoteStatus: {
+      type: String,
+      enum: ['Quoted', 'Accepted', 'Declined'],
+      default: null,
+    },
+    hourlyRate: { type: Number, default: 0 },
+    weeklyHours: { type: Number, default: 0 },
+    quotedMonthlyPrice: { type: Number, default: 0 },
+    agreementDate: { type: String, default: '' },
     effectiveDate: { type: String, default: '' },
     reviewDate: { type: String, default: '' },
     assessment: { type: AssessmentSchema, default: () => ({}) },

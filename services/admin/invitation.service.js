@@ -8,6 +8,9 @@ const formatInvitation = (invitation) => {
     client.subscriptionPlanId = String(invitation.subscriptionPlanId);
     client.invitedOn = invitation.invitedOn?.toISOString?.() || invitation.invitedOn;
     client.expiresAt = invitation.expiresAt?.toISOString?.() || invitation.expiresAt;
+    if (client.token) {
+      client.inviteUrl = functions.buildInviteUrl(client.token);
+    }
   }
   return client;
 };
@@ -48,7 +51,6 @@ const send = async (payload) => {
   });
 
   const formatted = formatInvitation(invitation);
-  formatted.inviteUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register?token=${invitation.token}`;
   return formatted;
 };
 

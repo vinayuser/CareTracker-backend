@@ -33,7 +33,8 @@ const formatCarePlan = (doc, client = null) => {
   const plan = functions.toClientDoc(doc);
   if (!plan) return null;
   plan.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
-  plan.clientId = String(doc.clientId?._id || doc.clientId || '');
+  plan.clientId = doc.clientId ? String(doc.clientId._id || doc.clientId || '') : null;
+  plan.assessmentId = doc.assessmentId ? String(doc.assessmentId) : null;
   if (client) {
     plan.client = typeof client === 'object' && client.firstName
       ? formatClient(client)
@@ -90,15 +91,27 @@ const getById = async (req, id) => {
 
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
-  const client = await Model.ClientModel.findOne({ _id: payload.clientId, agencyId });
-  if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+  if (!payload.clientId && !payload.assessmentId) {
+    throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+  }
+  let client = null;
+  if (payload.clientId) {
+    client = await Model.ClientModel.findOne({ _id: payload.clientId, agencyId });
+    if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+  }
 
   const planCode = await generatePlanCode(agencyId);
   const doc = await Model.CarePlanModel.create({
     agencyId,
-    clientId: client._id,
+    clientId: client?._id || null,
+    assessmentId: payload.assessmentId || null,
     planCode,
-    status: payload.status || 'Active',
+    status: payload.status || 'Draft',
+    quoteStatus: payload.quoteStatus || null,
+    hourlyRate: payload.hourlyRate ?? 0,
+    weeklyHours: payload.weeklyHours ?? 0,
+    quotedMonthlyPrice: payload.quotedMonthlyPrice ?? 0,
+    agreementDate: payload.agreementDate || '',
     effectiveDate: payload.effectiveDate || '',
     reviewDate: payload.reviewDate || '',
     assessment: payload.assessment || buildDefaultAssessment(),
@@ -108,7 +121,7 @@ const create = async (req, payload) => {
   });
 
   const populated = await Model.CarePlanModel.findById(doc._id).populate('clientId');
-  return formatCarePlan(populated, populated.clientId);
+  return formatCarePlan(populated, populated.clientId || null);
 };
 
 const update = async (req, id, payload) => {
@@ -122,7 +135,7 @@ const update = async (req, id, payload) => {
     doc.clientId = client._id;
   }
 
-  ['status', 'effectiveDate', 'reviewDate', 'assessmentNotes'].forEach((field) => {
+  ['status', 'effectiveDate', 'reviewDate', 'assessmentNotes', 'quoteStatus', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
 
@@ -131,7 +144,7 @@ const update = async (req, id, payload) => {
 
   await doc.save();
   const populated = await Model.CarePlanModel.findById(doc._id).populate('clientId');
-  return formatCarePlan(populated, populated.clientId);
+  return formatCarePlan(populated, populated.clientId || null);
 };
 
 const remove = async (req, id) => {

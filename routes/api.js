@@ -64,12 +64,23 @@ router.get('/agency/caregivers', Auth.authenticate('agency_owner', 'hr'), Contro
 router.get('/agency/caregivers/:id', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.getById);
 router.patch('/agency/caregivers/:id/password', Auth.authenticate('agency_owner'), Controller.AgencyCaregiverController.setPassword);
 
+router.get('/agency/clients/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getOptions);
 router.get('/agency/clients/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getStats);
 router.get('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getAll);
 router.get('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getById);
 router.post('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.create);
 router.put('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.update);
 router.delete('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.remove);
+
+router.get('/agency/assessments/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getOptions);
+router.get('/agency/assessments/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getStats);
+router.get('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getAll);
+router.get('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getById);
+router.post('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.create);
+router.put('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.update);
+router.delete('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.remove);
+router.post('/agency/assessments/:id/generate-quote', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.generateQuote);
+router.post('/agency/assessments/:id/accept-quote', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.acceptQuote);
 
 router.get('/agency/care-plans/options', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getOptions);
 router.get('/agency/care-plans/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getStats);

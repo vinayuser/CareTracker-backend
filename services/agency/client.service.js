@@ -1,6 +1,29 @@
 const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
+const clientConstants = require('../../common/clientConstants');
+
+const CLIENT_PAYLOAD_FIELDS = [
+  'intakeDate', 'intakeId',
+  'firstName', 'lastName', 'preferredName', 'dateOfBirth', 'gender', 'maritalStatus', 'ssnLast4',
+  'streetAddress', 'aptSuite', 'city', 'state', 'zipCode', 'country', 'phone', 'phoneHome', 'email',
+  'preferredLanguage', 'ethnicity', 'race',
+  'emergencyContactName', 'emergencyContactRelationship', 'emergencyContactPhone',
+  'alternateContactName', 'alternateContactRelationship', 'alternateContactPhone',
+  'physicianName', 'physicianPhone', 'lastVisitDate', 'pharmacyName', 'pharmacyPhone',
+  'insuranceProvider', 'insuranceMemberId', 'insuranceGroupNumber',
+  'medicalConditions', 'primaryDiagnosis', 'allergies', 'currentMedications', 'specialDiet', 'mobility',
+  'livingArrangements', 'livingArrangement', 'homeAccessibility', 'residenceType', 'assistiveDevices',
+  'hasPets', 'petsDescription', 'fallHistory', 'fallHistoryDescription',
+  'serviceTypes', 'mobilityAssistanceNeeded', 'mobilityAssistanceDescription',
+  'personalCareAssistanceNeeded', 'personalCareAssistanceDescription',
+  'careFrequency', 'preferredDays', 'preferredTimes', 'careNotes',
+  'paymentResponsibility', 'paymentResponsibilityOther',
+  'billingStreetAddress', 'billingCity', 'billingState', 'billingZip', 'paymentMethods',
+  'authorizationSignature', 'authorizationDate', 'authorizationPrintedName', 'authorizationRelationship',
+  'intakeCompletedBy', 'intakeCompletedDate', 'assignedTo', 'admissionDate', 'carePlanStartDate',
+  'status', 'notes',
+];
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -25,8 +48,34 @@ const computeAge = (dateOfBirth) => {
 };
 
 const formatAddress = (doc) => {
-  const parts = [doc.streetAddress, doc.city, doc.state, doc.zipCode].filter(Boolean);
+  const parts = [doc.streetAddress, doc.aptSuite, doc.city, doc.state, doc.zipCode].filter(Boolean);
   return parts.join(', ');
+};
+
+const syncDerivedFields = (data) => {
+  const next = { ...data };
+
+  if (next.medicalConditions && !next.primaryDiagnosis) {
+    next.primaryDiagnosis = next.medicalConditions;
+  } else if (next.primaryDiagnosis && !next.medicalConditions) {
+    next.medicalConditions = next.primaryDiagnosis;
+  }
+
+  if (Array.isArray(next.livingArrangements) && next.livingArrangements.length > 0) {
+    next.livingArrangement = next.livingArrangements.join(', ');
+  } else if (next.livingArrangement && !next.livingArrangements?.length) {
+    next.livingArrangements = next.livingArrangement.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  return next;
+};
+
+const pickPayload = (payload) => {
+  const data = {};
+  CLIENT_PAYLOAD_FIELDS.forEach((field) => {
+    if (payload[field] !== undefined) data[field] = payload[field];
+  });
+  return syncDerivedFields(data);
 };
 
 const formatClient = (doc) => {
@@ -36,6 +85,14 @@ const formatClient = (doc) => {
   client.fullName = `${doc.firstName} ${doc.lastName}`.trim();
   client.age = computeAge(doc.dateOfBirth);
   client.address = formatAddress(doc);
+
+  if (!client.primaryDiagnosis && client.medicalConditions) {
+    client.primaryDiagnosis = client.medicalConditions;
+  }
+  if (!client.livingArrangement && client.livingArrangements?.length) {
+    client.livingArrangement = client.livingArrangements.join(', ');
+  }
+
   return client;
 };
 
@@ -44,6 +101,8 @@ const generateClientCode = async (agencyId) => {
   return `CLT-${String(10001 + count).padStart(5, '0')}`;
 };
 
+const getOptions = () => clientConstants.getOptions();
+
 const getStats = async (req) => {
   const agencyId = getAgencyId(req);
   const list = await Model.ClientModel.find({ agencyId });
@@ -51,6 +110,7 @@ const getStats = async (req) => {
     total: list.length,
     active: list.filter((c) => c.status === 'Active').length,
     inactive: list.filter((c) => c.status === 'Inactive').length,
+    pending: list.filter((c) => c.status === 'Pending').length,
   };
 };
 
@@ -68,9 +128,14 @@ const getAll = async (req, query = {}) => {
     filter.$or = [
       { firstName: regex },
       { lastName: regex },
+      { preferredName: regex },
       { email: regex },
       { phone: regex },
+      { phoneHome: regex },
       { clientCode: regex },
+      { intakeId: regex },
+      { medicalConditions: regex },
+      { insuranceProvider: regex },
     ];
   }
 
@@ -88,30 +153,13 @@ const getById = async (req, id) => {
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const clientCode = await generateClientCode(agencyId);
+  const data = pickPayload(payload);
 
   const doc = await Model.ClientModel.create({
     agencyId,
     clientCode,
-    firstName: payload.firstName,
-    lastName: payload.lastName,
-    email: payload.email || '',
-    phone: payload.phone || '',
-    dateOfBirth: payload.dateOfBirth || '',
-    gender: payload.gender || '',
-    streetAddress: payload.streetAddress || '',
-    city: payload.city || '',
-    state: payload.state || '',
-    zipCode: payload.zipCode || '',
-    country: payload.country || 'United States',
-    primaryDiagnosis: payload.primaryDiagnosis || '',
-    allergies: payload.allergies || '',
-    mobility: payload.mobility || '',
-    livingArrangement: payload.livingArrangement || '',
-    emergencyContactName: payload.emergencyContactName || '',
-    emergencyContactRelationship: payload.emergencyContactRelationship || '',
-    emergencyContactPhone: payload.emergencyContactPhone || '',
-    status: payload.status || 'Active',
-    notes: payload.notes || '',
+    ...data,
+    status: data.status || 'Pending',
   });
 
   return formatClient(doc);
@@ -122,16 +170,9 @@ const update = async (req, id, payload) => {
   const doc = await Model.ClientModel.findOne({ _id: id, agencyId });
   if (!doc) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
 
-  const fields = [
-    'firstName', 'lastName', 'email', 'phone', 'dateOfBirth', 'gender',
-    'streetAddress', 'city', 'state', 'zipCode', 'country',
-    'primaryDiagnosis', 'allergies', 'mobility', 'livingArrangement',
-    'emergencyContactName', 'emergencyContactRelationship', 'emergencyContactPhone',
-    'status', 'notes',
-  ];
-
-  fields.forEach((field) => {
-    if (payload[field] !== undefined) doc[field] = payload[field];
+  const data = pickPayload(payload);
+  CLIENT_PAYLOAD_FIELDS.forEach((field) => {
+    if (data[field] !== undefined) doc[field] = data[field];
   });
 
   await doc.save();
@@ -153,6 +194,7 @@ const remove = async (req, id) => {
 };
 
 module.exports = {
+  getOptions,
   getStats,
   getAll,
   getById,

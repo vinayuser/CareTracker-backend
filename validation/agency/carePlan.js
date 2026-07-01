@@ -23,8 +23,14 @@ const serviceSchema = Joi.object({
 });
 
 const carePlanFields = {
-  clientId: Joi.string().required(),
+  clientId: Joi.string().optional(),
+  assessmentId: Joi.string().optional(),
   status: Joi.string().valid('Draft', 'Active', 'Archived').optional(),
+  quoteStatus: Joi.string().valid('Quoted', 'Accepted', 'Declined').allow(null).optional(),
+  hourlyRate: Joi.number().min(0).optional(),
+  weeklyHours: Joi.number().min(0).optional(),
+  quotedMonthlyPrice: Joi.number().min(0).optional(),
+  agreementDate: Joi.string().allow('').optional(),
   effectiveDate: Joi.string().allow('').optional(),
   reviewDate: Joi.string().allow('').optional(),
   assessment: assessmentSchema.optional(),
@@ -33,7 +39,7 @@ const carePlanFields = {
 };
 
 module.exports = {
-  create: Joi.object(carePlanFields),
+  create: Joi.object(carePlanFields).or('clientId', 'assessmentId'),
   update: Joi.object({
     ...carePlanFields,
     clientId: Joi.string().optional(),

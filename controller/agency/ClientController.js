@@ -57,3 +57,12 @@ module.exports.remove = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.getOptions = async (req, res, next) => {
+  try {
+    const data = ClientService.getOptions();
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};

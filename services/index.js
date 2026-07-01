@@ -10,4 +10,5 @@ module.exports.CandidateApplicationService = require('./agency/candidateApplicat
 module.exports.AiJobContentService = require('./agency/aiJobContent.service');
 module.exports.AgencyCaregiverService = require('./agency/agencyCaregiver.service');
 module.exports.ClientService = require('./agency/client.service');
+module.exports.ClientAssessmentService = require('./agency/clientAssessment.service');
 module.exports.CarePlanService = require('./agency/carePlan.service');

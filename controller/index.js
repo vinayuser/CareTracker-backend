@@ -10,6 +10,7 @@ module.exports = {
   CandidateApplicationController: require('./agency/CandidateApplicationController'),
   AgencyCaregiverController: require('./agency/AgencyCaregiverController'),
   ClientController: require('./agency/ClientController'),
+  ClientAssessmentController: require('./agency/ClientAssessmentController'),
   CarePlanController: require('./agency/CarePlanController'),
   CaregiverController: require('./caregiver/CaregiverController'),
 };

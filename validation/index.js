@@ -7,5 +7,6 @@ module.exports = {
   CandidateApplication: require('./agency/candidateApplication'),
   Caregiver: require('./agency/caregiver'),
   Client: require('./agency/client'),
+  ClientAssessment: require('./agency/clientAssessment'),
   CarePlan: require('./agency/carePlan'),
 };
