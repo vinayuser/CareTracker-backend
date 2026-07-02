@@ -113,13 +113,13 @@ async function seedDatabase() {
   if (adminCount === 0) {
     const admin = new Model.AdminModel({
       name: 'Super Admin',
-      email: 'admin@caretracker.com',
+      email: 'admin@caretraker.com',
       role: 'SUPER_ADMIN',
       password: 'placeholder',
     });
     await admin.setPassword('Admin@123');
     await admin.save();
-    console.log('Seeded default admin: admin@caretracker.com / Admin@123');
+    console.log('Seeded default admin: admin@caretraker.com / Admin@123');
   }
 
   const planCount = await Model.SubscriptionPlanModel.countDocuments();

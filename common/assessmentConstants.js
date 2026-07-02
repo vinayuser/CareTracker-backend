@@ -109,11 +109,15 @@ const buildEmptyFormData = () => ({
     backupName: '', backupRelationship: '', backupPhone: '',
   },
   medicalHistory: [],
+  medicalHistoryOther: '',
   allergies: { types: [], details: '' },
   medications: Array.from({ length: 6 }, buildEmptyMedicationRow),
   adls: buildEmptyAdls(),
   adlComments: '',
-  iadls: Object.fromEntries(IADL_ITEMS.map((item) => [item, 'Independent'])),
+  iadls: {
+    ...Object.fromEntries(IADL_ITEMS.filter((i) => i !== 'Financial Management').map((i) => [i, 'Independent'])),
+    'Financial Management': 'Not Needed',
+  },
   medicationReminder: 'Not Needed',
   mobility: {
     ambulation: [], transferAssistance: [], fallHistory: false, fallCount: '',
@@ -133,6 +137,7 @@ const buildEmptyFormData = () => ({
     depression: false, anxiety: false, behavioralConcerns: '',
   },
   clientGoals: [],
+  clientGoalsOther: '',
   requestedServices: [],
   schedule: {
     daysNeeded: [], preferredStart: '', preferredEnd: '',

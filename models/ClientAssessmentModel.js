@@ -7,6 +7,8 @@ const ClientAssessmentSchema = new mongoose.Schema(
     assessmentCode: { type: String, required: true },
     status: { type: String, enum: ASSESSMENT_STATUSES, default: 'Enquiry' },
     assessorName: { type: String, default: '' },
+    assessorTitle: { type: String, default: 'Care Assessment Specialist' },
+    assessorPhoto: { type: String, default: '' },
     assessmentDate: { type: String, default: '' },
     assessmentTypes: [{ type: String }],
     clientName: { type: String, default: '' },

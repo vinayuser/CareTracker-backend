@@ -114,6 +114,8 @@ const create = async (req, payload) => {
     agreementDate: payload.agreementDate || '',
     effectiveDate: payload.effectiveDate || '',
     reviewDate: payload.reviewDate || '',
+    version: payload.version || '1.0',
+    formData: payload.formData || {},
     assessment: payload.assessment || buildDefaultAssessment(),
     assessmentNotes: payload.assessmentNotes || '',
     services: payload.services?.length ? payload.services : DEFAULT_SERVICES,
@@ -135,9 +137,11 @@ const update = async (req, id, payload) => {
     doc.clientId = client._id;
   }
 
-  ['status', 'effectiveDate', 'reviewDate', 'assessmentNotes', 'quoteStatus', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
+  ['status', 'effectiveDate', 'reviewDate', 'version', 'assessmentNotes', 'quoteStatus', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
+
+  if (payload.formData) doc.formData = payload.formData;
 
   if (payload.assessment) doc.assessment = { ...doc.assessment.toObject?.() || doc.assessment, ...payload.assessment };
   if (payload.services) doc.services = payload.services;

@@ -43,7 +43,7 @@ const server = require('http').createServer(app);
 server.listen(port, async () => {
   await connection.mongodb();
   await seedDatabase();
-  console.log(`CareTracker API running on port ${port}`);
+  console.log(`CareTraker API running on port ${port}`);
 });
 
 module.exports = app;

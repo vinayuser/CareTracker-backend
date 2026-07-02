@@ -1,6 +1,6 @@
-# CareTracker Backend API
+# CareTraker Backend API
 
-Node.js + Express + MongoDB backend for the CareTracker admin panel.
+Node.js + Express + MongoDB backend for the CareTraker admin panel.
 
 Follows the same layered structure as the pool_game project:
 
@@ -46,7 +46,7 @@ API runs at `http://localhost:3000/api`.
 
 On first startup, the seed script creates:
 
-- **Email:** `admin@caretracker.com`
+- **Email:** `admin@caretraker.com`
 - **Password:** `Admin@123`
 
 ## API routes

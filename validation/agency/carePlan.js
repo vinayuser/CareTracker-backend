@@ -33,6 +33,8 @@ const carePlanFields = {
   agreementDate: Joi.string().allow('').optional(),
   effectiveDate: Joi.string().allow('').optional(),
   reviewDate: Joi.string().allow('').optional(),
+  version: Joi.string().allow('').optional(),
+  formData: Joi.object().unknown(true).optional(),
   assessment: assessmentSchema.optional(),
   assessmentNotes: Joi.string().allow('').optional(),
   services: Joi.array().items(serviceSchema).optional(),

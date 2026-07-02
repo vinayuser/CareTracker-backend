@@ -6,6 +6,8 @@ const stringArray = Joi.array().items(Joi.string()).optional();
 module.exports = {
   create: Joi.object({
     assessorName: stringField,
+    assessorTitle: stringField,
+    assessorPhoto: stringField,
     assessmentDate: stringField,
     assessmentTypes: stringArray,
     formData: Joi.object().unknown(true).required(),
@@ -13,6 +15,8 @@ module.exports = {
   }),
   update: Joi.object({
     assessorName: stringField,
+    assessorTitle: stringField,
+    assessorPhoto: stringField,
     assessmentDate: stringField,
     assessmentTypes: stringArray,
     formData: Joi.object().unknown(true).optional(),

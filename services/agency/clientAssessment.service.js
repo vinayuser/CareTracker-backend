@@ -168,6 +168,8 @@ const create = async (req, payload) => {
     agencyId,
     assessmentCode: await generateAssessmentCode(agencyId),
     assessorName: payload.assessorName || '',
+    assessorTitle: payload.assessorTitle || 'Care Assessment Specialist',
+    assessorPhoto: payload.assessorPhoto || '',
     assessmentDate: payload.assessmentDate || new Date().toISOString().split('T')[0],
     assessmentTypes: payload.assessmentTypes || [],
     formData: payload.formData,
@@ -184,7 +186,7 @@ const update = async (req, id, payload) => {
   if (!doc) throw new Error(constants.MESSAGE.ASSESSMENT.NOT_FOUND);
   if (doc.status === 'Accepted') throw new Error(constants.MESSAGE.ASSESSMENT.ALREADY_ACCEPTED);
 
-  ['assessorName', 'assessmentDate', 'assessmentTypes', 'formData', 'status'].forEach((field) => {
+  ['assessorName', 'assessorTitle', 'assessorPhoto', 'assessmentDate', 'assessmentTypes', 'formData', 'status'].forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
 
