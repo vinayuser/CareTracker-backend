@@ -12,3 +12,4 @@ module.exports.AgencyCaregiverService = require('./agency/agencyCaregiver.servic
 module.exports.ClientService = require('./agency/client.service');
 module.exports.ClientAssessmentService = require('./agency/clientAssessment.service');
 module.exports.CarePlanService = require('./agency/carePlan.service');
+module.exports.InsuranceIntakeService = require('./agency/insuranceIntake.service');

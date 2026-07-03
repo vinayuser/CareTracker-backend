@@ -90,6 +90,14 @@ router.post('/agency/care-plans', Auth.authenticate('agency_owner', 'hr'), Contr
 router.put('/agency/care-plans/:id', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.update);
 router.delete('/agency/care-plans/:id', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.remove);
 
+router.get('/agency/insurance-intakes/options', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.getOptions);
+router.get('/agency/insurance-intakes/stats', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.getStats);
+router.get('/agency/insurance-intakes', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.getAll);
+router.get('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.getById);
+router.post('/agency/insurance-intakes', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.create);
+router.put('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.update);
+router.delete('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.remove);
+
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
 router.get('/agency/job-applications/job/:jobId/rejected', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getRejectedByJob);

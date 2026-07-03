@@ -106,5 +106,11 @@ module.exports = {
       NOT_FOUND: 'Client assessment not found',
       ALREADY_ACCEPTED: 'This assessment has already been accepted',
     },
+    INSURANCE_INTAKE: {
+      CREATED: 'Insurance intake saved successfully',
+      UPDATED: 'Insurance intake updated successfully',
+      DELETED: 'Insurance intake deleted successfully',
+      NOT_FOUND: 'Insurance intake not found',
+    },
   },
 };

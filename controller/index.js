@@ -12,5 +12,6 @@ module.exports = {
   ClientController: require('./agency/ClientController'),
   ClientAssessmentController: require('./agency/ClientAssessmentController'),
   CarePlanController: require('./agency/CarePlanController'),
+  InsuranceIntakeController: require('./agency/InsuranceIntakeController'),
   CaregiverController: require('./caregiver/CaregiverController'),
 };

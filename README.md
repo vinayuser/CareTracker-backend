@@ -83,6 +83,36 @@ All responses use the pool_game envelope:
 
 The frontend axios client unwraps `data` automatically.
 
+## Production (PM2)
+
+```bash
+cd backend
+mkdir -p logs
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+Health check: `curl http://127.0.0.1:5000/api/health`
+
+Ensure `NODE_PORT` in `config/.env` matches nginx `proxy_pass` (see `admin/deploy/nginx-host-caretraker.conf`).
+
+Set `RUN_SEED=false` in production after the first deploy to skip seed work on every restart.
+
+### If all APIs return "Not Found" after a while
+
+1. **Check PM2 logs** — `pm2 logs caretraker-api --lines 100`  
+   Look for `MongoDB disconnected`, `Unhandled rejection`, or `Failed to start API`.
+
+2. **Verify port alignment** — nginx must proxy to the same port PM2 uses (`5000` in `ecosystem.config.js`).
+
+3. **Check API URL** — frontend `VITE_API_BASE_URL` must be `https://caretraker.com/api` (not `/api/api`).  
+   A double `/api` path hits Express with no matching route → 404 for every call.
+
+4. **MongoDB** — if MongoDB restarts or drops idle connections, the API now reconnects automatically.  
+   Before this fix, a crash during restart could leave a broken process listening without a DB.
+
+5. **Health endpoint** — when broken, `curl http://127.0.0.1:5000/api/health` returns `503` if MongoDB is down.
+
 ## Frontend connection
 
 Set in admin `.env`:

@@ -9,4 +9,5 @@ module.exports = {
   Client: require('./agency/client'),
   ClientAssessment: require('./agency/clientAssessment'),
   CarePlan: require('./agency/carePlan'),
+  InsuranceIntake: require('./agency/insuranceIntake'),
 };
