@@ -89,9 +89,9 @@ async function start() {
   try {
     await connection.mongodb();
 
-    if (process.env.RUN_SEED !== 'false') {
-      await seedDatabase();
-    }
+    // if (process.env.RUN_SEED !== 'false') {
+    //   await seedDatabase();
+    // }
 
     server.listen(port, () => {
       console.log(`CareTraker API running on port ${port} (pid ${process.pid})`);
