@@ -1,32 +1,59 @@
+/** Keep in sync with admin/src/constants/agencyModules.js */
 const OWNER_ONLY_MODULES = [
   'AGENCY_HR_STAFF',
-  'AGENCY_USERS',
-  'AGENCY_ROLES',
-  'AGENCY_SETTINGS',
-  'AGENCY_BILLING',
 ];
 
-const HR_ASSIGNABLE_MODULES = [
-  'AGENCY_DASHBOARD',
-  'AGENCY_CLIENTS',
-  'AGENCY_ASSESSMENTS',
-  'AGENCY_CARE_PLANS',
-  'AGENCY_SERVICE_NOTES',
-  'AGENCY_MEDICATIONS',
-  'AGENCY_EMAR',
-  'AGENCY_SCHEDULE',
-  'AGENCY_VISIT_CALENDAR',
-  'AGENCY_SHIFT_MANAGEMENT',
-  'AGENCY_TIME_ATTENDANCE',
-  'AGENCY_CAREGIVERS',
-  'AGENCY_CAREGIVER_MATCHING',
-  'AGENCY_HIRING_PIPELINE',
-  'AGENCY_JOBS',
-  'AGENCY_CANDIDATES',
-  'AGENCY_TASKS',
-  'AGENCY_INCIDENTS',
-  'AGENCY_REPORTS',
+const MODULE_GROUPS = [
+  { title: 'Overview', keys: ['AGENCY_DASHBOARD'] },
+  {
+    title: 'Client Management',
+    keys: [
+      'AGENCY_ASSESSMENTS',
+      'AGENCY_CLIENTS',
+      'AGENCY_CARE_PLANS',
+      'AGENCY_INSURANCE_INTAKE',
+    ],
+  },
+  {
+    title: 'EVV',
+    keys: [
+      'AGENCY_EVV_DASHBOARD',
+      'AGENCY_EVV_LOGS',
+      'AGENCY_EVV_EXCEPTIONS',
+      'AGENCY_EVV_UNVERIFIED',
+      'AGENCY_EVV_ENROLLMENTS',
+      'AGENCY_EVV_SETTINGS',
+    ],
+  },
+  {
+    title: 'Caregivers',
+    keys: ['AGENCY_CAREGIVERS'],
+  },
+  {
+    title: 'Human Resources',
+    keys: ['AGENCY_HIRING_PIPELINE', 'AGENCY_JOBS', 'AGENCY_CANDIDATES'],
+  },
 ];
+
+const MODULE_LABELS = {
+  AGENCY_DASHBOARD: 'Dashboard',
+  AGENCY_CLIENTS: 'Clients',
+  AGENCY_INSURANCE_INTAKE: 'Insurance Intake',
+  AGENCY_ASSESSMENTS: 'Assessments',
+  AGENCY_CARE_PLANS: 'Care Plans',
+  AGENCY_EVV_DASHBOARD: 'EVV Dashboard',
+  AGENCY_EVV_LOGS: 'EVV Logs',
+  AGENCY_EVV_EXCEPTIONS: 'Exceptions',
+  AGENCY_EVV_UNVERIFIED: 'Unverified Visits',
+  AGENCY_EVV_ENROLLMENTS: 'Enrollments',
+  AGENCY_EVV_SETTINGS: 'EVV Settings',
+  AGENCY_CAREGIVERS: 'Caregivers',
+  AGENCY_HIRING_PIPELINE: 'Hiring Pipeline',
+  AGENCY_JOBS: 'Jobs',
+  AGENCY_CANDIDATES: 'Candidates',
+};
+
+const HR_ASSIGNABLE_MODULES = [...new Set(MODULE_GROUPS.flatMap((group) => group.keys))];
 
 const DEFAULT_HR_MODULES = [
   'AGENCY_DASHBOARD',
@@ -34,7 +61,6 @@ const DEFAULT_HR_MODULES = [
   'AGENCY_HIRING_PIPELINE',
   'AGENCY_JOBS',
   'AGENCY_CANDIDATES',
-  'AGENCY_TASKS',
 ];
 
 const sanitizeModuleAccess = (modules) => {
@@ -46,6 +72,8 @@ const sanitizeModuleAccess = (modules) => {
 
 module.exports = {
   OWNER_ONLY_MODULES,
+  MODULE_GROUPS,
+  MODULE_LABELS,
   HR_ASSIGNABLE_MODULES,
   DEFAULT_HR_MODULES,
   sanitizeModuleAccess,

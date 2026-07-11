@@ -21,6 +21,30 @@ module.exports.buildInviteUrl = function (token) {
   return `${module.exports.getFrontendUrl()}/register?token=${encodeURIComponent(token)}`;
 };
 
+module.exports.generateCandidateFormToken = function () {
+  return `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+};
+
+module.exports.buildCandidateFormUrl = function (token) {
+  return `${module.exports.getFrontendUrl()}/candidate/forms/${encodeURIComponent(token)}`;
+};
+
+module.exports.getApiBaseUrl = function () {
+  const port = Number(process.env.NODE_PORT) || 3000;
+  const fromEnv = (process.env.API_BASE_URL || process.env.BACKEND_URL || '').trim().replace(/\/+$/, '');
+  if (fromEnv) return fromEnv;
+  return `http://localhost:${port}`;
+};
+
+module.exports.buildDocumentTemplateUrl = function (relativePath) {
+  const base = module.exports.getApiBaseUrl();
+  let clean = String(relativePath || '').replace(/^\/+/, '');
+  if (clean.startsWith('documents/')) {
+    clean = clean.slice('documents/'.length);
+  }
+  return `${base}/documents/${clean.split('/').map(encodeURIComponent).join('/')}`;
+};
+
 module.exports.toClientDoc = (doc) => {
   if (!doc) return null;
   const obj = typeof doc.toJSON === 'function' ? doc.toJSON() : { ...doc };

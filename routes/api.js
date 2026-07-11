@@ -12,6 +12,21 @@ router.post('/registration/submit', Controller.RegistrationController.submit);
 router.post('/registration/payment', Controller.RegistrationController.processPayment);
 router.get('/invitations/validate', Controller.InvitationController.validate);
 
+// Public candidate hiring forms
+router.get('/candidate-forms/:token', Controller.CandidateFormController.getPortal);
+router.get('/candidate-forms/:token/:documentCode', Controller.CandidateFormController.getDocument);
+router.put('/candidate-forms/:token/:documentCode', Controller.CandidateFormController.saveDraft);
+router.post('/candidate-forms/:token/:documentCode/submit', Controller.CandidateFormController.submit);
+router.post(
+  '/candidate-forms/:token/:documentCode/submit-pdf',
+  (req, res, next) => {
+    require('../middleware/candidateFormUpload')(req, res, (err) => {
+      if (err) return next(err);
+      return Controller.CandidateFormController.submitPdf(req, res, next);
+    });
+  },
+);
+
 // Public plans (registration flow)
 router.get('/subscription-plans/active', Controller.SubscriptionPlanController.getActive);
 
@@ -98,6 +113,15 @@ router.post('/agency/insurance-intakes', Auth.authenticate('agency_owner', 'hr')
 router.put('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.update);
 router.delete('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.remove);
 
+router.get('/agency/evv-enrollments/options', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getOptions);
+router.get('/agency/evv-enrollments/stats', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getStats);
+router.get('/agency/evv-enrollments', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getAll);
+router.get('/agency/evv-enrollments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getById);
+router.put('/agency/evv-enrollments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.update);
+router.post('/agency/evv-enrollments/:id/verify', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.verify);
+router.delete('/agency/evv-enrollments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.remove);
+router.post('/agency/evv-enrollments/sync/:carePlanId', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.syncCarePlan);
+
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
 router.get('/agency/job-applications/job/:jobId/rejected', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getRejectedByJob);
@@ -111,8 +135,19 @@ router.post('/agency/job-applications/:id/previous-stage', Auth.authenticate('ag
 router.post('/agency/job-applications/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.reject);
 router.post('/agency/job-applications/:id/undo-hire', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.undoHire);
 router.post('/agency/job-applications/:id/complete-hire', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.completeHire);
+router.get('/agency/job-applications/:id/form-submissions', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.getSubmissions);
+router.get('/agency/job-applications/:id/form-submissions/:submissionId/print', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.getPrintData);
+router.post('/agency/job-applications/:id/resend-form-email', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.resendEmail);
+router.post('/agency/job-applications/:id/form-submissions/:documentCode/reset', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.resetSubmission);
+router.get('/agency/job-applications/:id/interview-feedback', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.get);
+router.put('/agency/job-applications/:id/interview-feedback/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.save);
+router.get('/agency/job-applications/:id/interview-feedback/:stageId/print', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.getPrint);
+router.get('/agency/interview-feedback/options', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.getOptions);
 
 // Caregiver portal — /api/caregiver/*
 router.get('/caregiver/profile', Auth.authenticate('caregiver'), Controller.CaregiverController.getProfile);
+router.get('/caregiver/evv-enrollments', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getAll);
+router.get('/caregiver/evv-enrollments/:id', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getById);
+router.post('/caregiver/evv-enrollments/:id/submit', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.submit);
 
 module.exports = router;

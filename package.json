@@ -25,7 +25,8 @@
     "module-alias": "^2.2.3",
     "mongoose": "^7.6.8",
     "morgan": "^1.10.0",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

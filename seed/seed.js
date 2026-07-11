@@ -2,6 +2,7 @@ require('module-alias/register');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../config/.env') });
 
 const connection = require('../common/connection');
+const { DEFAULT_HR_MODULES } = require('../common/agencyModules');
 const Model = require('../models/index');
 const { HiringPipelineService } = require('../services');
 const HIRING_DOCUMENTS = require('./documents');
@@ -209,7 +210,7 @@ async function seedBrightCarePortal() {
       await hrAccount.save();
     }
 
-    const hrModules = ['AGENCY_DASHBOARD', 'AGENCY_CAREGIVERS', 'AGENCY_HIRING_PIPELINE', 'AGENCY_JOBS', 'AGENCY_CANDIDATES', 'AGENCY_TASKS'];
+    const hrModules = [...DEFAULT_HR_MODULES];
     if (!hrAccount.moduleAccess?.length) {
       hrAccount.moduleAccess = hrModules;
       await hrAccount.save();
@@ -248,11 +249,11 @@ async function seedBrightCarePortal() {
       status: 'Active',
       notes: 'Primary HR contact for caregiver hiring and credential tracking.',
       role: 'HR',
-      moduleAccess: ['AGENCY_DASHBOARD', 'AGENCY_CAREGIVERS', 'AGENCY_HIRING_PIPELINE', 'AGENCY_JOBS', 'AGENCY_CANDIDATES', 'AGENCY_TASKS'],
+      moduleAccess: [...DEFAULT_HR_MODULES],
     });
     console.log('Seeded HR staff: emily.rodriguez@brightcare.com / Hr@123456');
   } else {
-    const hrModules = ['AGENCY_DASHBOARD', 'AGENCY_CAREGIVERS', 'AGENCY_HIRING_PIPELINE', 'AGENCY_JOBS', 'AGENCY_CANDIDATES', 'AGENCY_TASKS'];
+    const hrModules = [...DEFAULT_HR_MODULES];
     await Model.HrStaffModel.updateOne(
       { email: 'emily.rodriguez@brightcare.com' },
       { $set: { moduleAccess: hrModules } },

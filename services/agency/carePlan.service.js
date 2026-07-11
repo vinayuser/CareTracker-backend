@@ -6,6 +6,7 @@ const {
   DEFAULT_SERVICES,
 } = require('../../common/carePlanConstants');
 const { formatClient } = require('./client.service');
+const { syncFromCarePlan } = require('./evvEnrollment.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -89,6 +90,12 @@ const getById = async (req, id) => {
   return formatCarePlan(doc, doc.clientId);
 };
 
+const QUOTE_STATUSES = ['Quoted', 'Accepted', 'Declined'];
+
+const normalizeQuoteStatus = (value) => (
+  value && QUOTE_STATUSES.includes(value) ? value : undefined
+);
+
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   if (!payload.clientId && !payload.assessmentId) {
@@ -101,13 +108,12 @@ const create = async (req, payload) => {
   }
 
   const planCode = await generatePlanCode(agencyId);
-  const doc = await Model.CarePlanModel.create({
+  const createData = {
     agencyId,
     clientId: client?._id || null,
     assessmentId: payload.assessmentId || null,
     planCode,
     status: payload.status || 'Draft',
-    quoteStatus: payload.quoteStatus || null,
     hourlyRate: payload.hourlyRate ?? 0,
     weeklyHours: payload.weeklyHours ?? 0,
     quotedMonthlyPrice: payload.quotedMonthlyPrice ?? 0,
@@ -120,9 +126,17 @@ const create = async (req, payload) => {
     assessmentNotes: payload.assessmentNotes || '',
     services: payload.services?.length ? payload.services : DEFAULT_SERVICES,
     createdByAccountId: getAccountId(req),
-  });
+  };
+
+  const quoteStatus = normalizeQuoteStatus(payload.quoteStatus);
+  if (quoteStatus) createData.quoteStatus = quoteStatus;
+
+  const doc = await Model.CarePlanModel.create(createData);
 
   const populated = await Model.CarePlanModel.findById(doc._id).populate('clientId');
+  if (populated.clientId) {
+    await syncFromCarePlan(agencyId, populated);
+  }
   return formatCarePlan(populated, populated.clientId || null);
 };
 
@@ -137,9 +151,15 @@ const update = async (req, id, payload) => {
     doc.clientId = client._id;
   }
 
-  ['status', 'effectiveDate', 'reviewDate', 'version', 'assessmentNotes', 'quoteStatus', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
+  ['status', 'effectiveDate', 'reviewDate', 'version', 'assessmentNotes', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
+
+  if (payload.quoteStatus !== undefined) {
+    const quoteStatus = normalizeQuoteStatus(payload.quoteStatus);
+    if (quoteStatus) doc.quoteStatus = quoteStatus;
+    else doc.set('quoteStatus', undefined);
+  }
 
   if (payload.formData) doc.formData = payload.formData;
 
@@ -148,6 +168,9 @@ const update = async (req, id, payload) => {
 
   await doc.save();
   const populated = await Model.CarePlanModel.findById(doc._id).populate('clientId');
+  if (populated.clientId) {
+    await syncFromCarePlan(agencyId, populated);
+  }
   return formatCarePlan(populated, populated.clientId || null);
 };
 

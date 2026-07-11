@@ -5,9 +5,12 @@ module.exports = {
   HiringPipeline: require('./agency/hiringPipeline'),
   JobPost: require('./agency/jobPost'),
   CandidateApplication: require('./agency/candidateApplication'),
+  CandidateForm: require('./agency/candidateForm'),
+  InterviewFeedback: require('./agency/interviewFeedback'),
   Caregiver: require('./agency/caregiver'),
   Client: require('./agency/client'),
   ClientAssessment: require('./agency/clientAssessment'),
   CarePlan: require('./agency/carePlan'),
   InsuranceIntake: require('./agency/insuranceIntake'),
+  EvvEnrollment: require('./agency/evvEnrollment'),
 };

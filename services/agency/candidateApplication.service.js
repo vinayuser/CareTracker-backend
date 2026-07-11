@@ -3,6 +3,12 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { parseExperience, buildUploadUrl } = require('../../common/candidateHelpers');
 const { getAgencyId, getAgencyStagesForJob } = require('./jobPost.service');
+const CandidateFormService = require('./candidateForm.service');
+const InterviewFeedbackService = require('./interviewFeedback.service');
+const {
+  sendCandidateApplicationEmail,
+  sendCaregiverWelcomeEmail,
+} = require('../common/mail.service');
 
 const formatApplicationPopulated = (app) => {
   if (!app) return null;
@@ -161,7 +167,7 @@ const applyForJob = async (req, payload) => {
     .populate('jobPostId')
     .populate('agencyStageId');
 
-  return formatApplication(populated, {
+  const formatted = formatApplication(populated, {
     candidate: formatCandidate(populated.candidateId),
     job: populated.jobPostId ? {
       id: String(populated.jobPostId._id),
@@ -172,6 +178,36 @@ const applyForJob = async (req, payload) => {
       name: populated.agencyStageId.name,
     } : null,
   });
+
+  try {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name');
+    if (candidate.email) {
+      await sendCandidateApplicationEmail({
+        to: candidate.email,
+        candidateName: `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Candidate',
+        jobTitle: job.jobTitle,
+        agencyName: agency?.name,
+        stageName: firstStage?.name,
+      });
+    }
+  } catch (err) {
+    console.error('[applyForJob] application email failed', err.message);
+  }
+
+  try {
+    const formAccess = await CandidateFormService.issueStageAccess(req, application._id);
+    if (!formAccess.skipped) {
+      formatted.form_url = formAccess.form_url;
+      formatted.form_progress = formAccess.access ? {
+        form_url: formAccess.form_url,
+        email_sent_at: formAccess.access.email_sent_at,
+      } : null;
+    }
+  } catch (err) {
+    console.error('[applyForJob] form access issue failed', err.message);
+  }
+
+  return formatted;
 };
 
 const getAllApplications = async (req, query = {}) => {
@@ -213,6 +249,12 @@ const setStage = async (req, applicationId, stageId) => {
   app.agencyStageId = stageId;
   app.status = 'Active';
   await app.save();
+
+  try {
+    await CandidateFormService.issueStageAccess(req, applicationId);
+  } catch (err) {
+    console.error('[setStage] form access issue failed', err.message);
+  }
 
   return formatApplication(app);
 };
@@ -320,6 +362,22 @@ const transferHiredApplicationToCaregiver = async (req, app, job) => {
   }
   await job.save();
 
+  try {
+    if (caregiverAccount.email) {
+      const agency = await Model.AgencyModel.findById(agencyId).select('name');
+      await sendCaregiverWelcomeEmail({
+        to: caregiverAccount.email,
+        caregiverName: caregiverAccount.fullName || `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Caregiver',
+        agencyName: agency?.name,
+        jobTitle: job.jobTitle,
+        email: caregiverAccount.email,
+        password: tempPassword,
+      });
+    }
+  } catch (err) {
+    console.error('[transferHiredApplicationToCaregiver] welcome email failed', err.message);
+  }
+
   return formatCaregiverAccount(caregiverAccount, {
     tempPassword,
     jobTitle: job.jobTitle,
@@ -396,6 +454,12 @@ const moveToNextStage = async (req, applicationId) => {
   app.agencyStageId = stages[currentIndex + 1]._id;
   await app.save();
 
+  try {
+    await CandidateFormService.issueStageAccess(req, applicationId);
+  } catch (err) {
+    console.error('[moveToNextStage] form access issue failed', err.message);
+  }
+
   const populated = await Model.CandidateApplicationModel.findById(app._id)
     .populate('candidateId')
     .populate('agencyStageId');
@@ -417,6 +481,12 @@ const moveToPreviousStage = async (req, applicationId) => {
 
   app.agencyStageId = stages[currentIndex - 1]._id;
   await app.save();
+
+  try {
+    await CandidateFormService.issueStageAccess(req, applicationId);
+  } catch (err) {
+    console.error('[moveToPreviousStage] form access issue failed', err.message);
+  }
 
   const populated = await Model.CandidateApplicationModel.findById(app._id)
     .populate('candidateId')
@@ -499,10 +569,20 @@ const getByJobAndStage = async (req, jobId, stageId) => {
     return { ...formatApplicationPopulated(app), stage_info: info };
   }));
 
+  const enriched = await CandidateFormService.enrichApplicationsWithFormProgress(
+    applications,
+    stageId,
+  );
+
+  const withFeedback = await InterviewFeedbackService.enrichApplicationsWithFeedback(
+    enriched,
+    stageId,
+  );
+
   return {
     job: { id: String(job._id), job_title: job.jobTitle },
     stage: stageInfo ? { id: String(stageInfo._id), name: stageInfo.name } : null,
-    applications,
+    applications: withFeedback,
   };
 };
 

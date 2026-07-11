@@ -25,24 +25,7 @@ function attachConnectionEvents() {
 }
 
 module.exports.mongodb = async () => {
-  const uri = process.env.MONGODB_URI || DEFAULT_URI;
-
-  if (mongoose.connection.readyState === 1) {
-    return mongoose.connection;
-  }
-
-  attachConnectionEvents();
-
-  await mongoose.connect(uri, {
-    serverSelectionTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
-    maxPoolSize: 20,
-    minPoolSize: 2,
-    heartbeatFrequencyMS: 10000,
-  });
-
-  console.log('MongoDB ready:', uri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@'));
-  return mongoose.connection;
+  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/caretracker_backend';
+  await mongoose.connect(uri);
+  console.log('MongoDB connected:', uri);
 };
-
-module.exports.isMongoReady = () => mongoose.connection.readyState === 1;

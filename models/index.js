@@ -10,8 +10,12 @@ module.exports = {
   JobPostModel: require('./JobPostModel'),
   CandidateModel: require('./CandidateModel'),
   CandidateApplicationModel: require('./CandidateApplicationModel'),
+  CandidateStageAccessModel: require('./CandidateStageAccessModel'),
+  CandidateFormSubmissionModel: require('./CandidateFormSubmissionModel'),
+  InterviewFeedbackModel: require('./InterviewFeedbackModel'),
   ClientModel: require('./ClientModel'),
   ClientAssessmentModel: require('./ClientAssessmentModel'),
   CarePlanModel: require('./CarePlanModel'),
   ClientInsuranceIntakeModel: require('./ClientInsuranceIntakeModel'),
+  EvvEnrollmentModel: require('./EvvEnrollmentModel'),
 };

@@ -27,6 +27,7 @@ app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/documents', express.static(path.join(__dirname, 'documents')));
 
 app.get('/api/health', (req, res) => {
   const mongoReady = connection.isMongoReady();

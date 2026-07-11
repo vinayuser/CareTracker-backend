@@ -41,7 +41,6 @@ const CarePlanSchema = new mongoose.Schema(
     quoteStatus: {
       type: String,
       enum: ['Quoted', 'Accepted', 'Declined'],
-      default: null,
     },
     hourlyRate: { type: Number, default: 0 },
     weeklyHours: { type: Number, default: 0 },
