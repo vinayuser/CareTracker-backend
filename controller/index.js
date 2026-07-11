@@ -16,6 +16,7 @@ module.exports = {
   CarePlanController: require('./agency/CarePlanController'),
   InsuranceIntakeController: require('./agency/InsuranceIntakeController'),
   EvvEnrollmentController: require('./agency/EvvEnrollmentController'),
+  VisitScheduleController: require('./agency/VisitScheduleController'),
   CaregiverController: require('./caregiver/CaregiverController'),
   CaregiverEvvEnrollmentController: require('./caregiver/EvvEnrollmentController'),
 };

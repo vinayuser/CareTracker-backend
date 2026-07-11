@@ -328,15 +328,28 @@ const transferHiredApplicationToCaregiver = async (req, app, job) => {
       agencyId,
       candidateId: candidate._id,
       sourceJobPostId: job._id,
+      phone: candidate.phone || '',
+      dateOfBirth: candidate.dateOfBirth
+        ? new Date(candidate.dateOfBirth).toISOString().slice(0, 10)
+        : '',
       password: 'placeholder',
     });
     await caregiverAccount.setPassword(tempPassword);
+    await caregiverAccount.save();
+    caregiverAccount.employeeId = `CG-${String(caregiverAccount._id).slice(-6).toUpperCase()}`;
     await caregiverAccount.save();
   } else if (caregiverAccount.role !== 'CAREGIVER') {
     throw new Error(constants.MESSAGE.CANDIDATE.CAREGIVER_ACCOUNT_CONFLICT);
   } else {
     caregiverAccount.candidateId = candidate._id;
     caregiverAccount.sourceJobPostId = job._id;
+    if (!caregiverAccount.phone && candidate.phone) caregiverAccount.phone = candidate.phone;
+    if (!caregiverAccount.dateOfBirth && candidate.dateOfBirth) {
+      caregiverAccount.dateOfBirth = new Date(candidate.dateOfBirth).toISOString().slice(0, 10);
+    }
+    if (!caregiverAccount.employeeId) {
+      caregiverAccount.employeeId = `CG-${String(caregiverAccount._id).slice(-6).toUpperCase()}`;
+    }
     await caregiverAccount.save();
   }
 

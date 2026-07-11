@@ -23,6 +23,9 @@ const AgencyAccountSchema = new mongoose.Schema(
     moduleAccess: { type: [String], default: [] },
     candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
     sourceJobPostId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobPost' },
+    employeeId: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    dateOfBirth: { type: String, default: '' },
   },
   {
     timestamps: true,

@@ -18,4 +18,6 @@ module.exports = {
   CarePlanModel: require('./CarePlanModel'),
   ClientInsuranceIntakeModel: require('./ClientInsuranceIntakeModel'),
   EvvEnrollmentModel: require('./EvvEnrollmentModel'),
+  VisitScheduleModel: require('./VisitScheduleModel'),
+  VisitModel: require('./VisitModel'),
 };

@@ -32,16 +32,61 @@ const getCaregiverAgencyId = (req) => {
   return agencyId;
 };
 
-const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = {}) => {
+const toDateInput = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+};
+
+/** Ensure caregiver has employeeId + profile fields (from candidate when needed). */
+const ensureCaregiverProfile = async (caregiver) => {
+  if (!caregiver) return null;
+
+  let candidate = caregiver.candidateId;
+  if (candidate && typeof candidate !== 'object') {
+    candidate = await Model.CandidateModel.findById(candidate);
+  } else if (!candidate && caregiver._id) {
+    const fresh = await Model.AgencyAccountModel.findById(caregiver._id);
+    if (fresh?.candidateId) {
+      candidate = await Model.CandidateModel.findById(fresh.candidateId);
+    }
+  }
+
+  let dirty = false;
+  if (!caregiver.employeeId) {
+    caregiver.employeeId = `CG-${String(caregiver._id).slice(-6).toUpperCase()}`;
+    dirty = true;
+  }
+  if (!caregiver.phone && candidate?.phone) {
+    caregiver.phone = candidate.phone;
+    dirty = true;
+  }
+  if (!caregiver.dateOfBirth && candidate?.dateOfBirth) {
+    caregiver.dateOfBirth = toDateInput(candidate.dateOfBirth);
+    dirty = true;
+  }
+  if (dirty && typeof caregiver.save === 'function') {
+    await caregiver.save();
+  }
+
+  return { caregiver, candidate: candidate && typeof candidate === 'object' ? candidate : null };
+};
+
+const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = {}, candidate = null) => {
   const clientFullName = client
     ? `${client.firstName || ''} ${client.lastName || ''}`.trim()
-  : '';
+    : '';
   const clientInfo = carePlan?.formData?.clientInfo || {};
+  const caregiverPhone = caregiver?.phone || candidate?.phone || '';
+  const caregiverDob = toDateInput(caregiver?.dateOfBirth || candidate?.dateOfBirth);
+  const caregiverAddress = candidate?.location || '';
 
   return {
     clientInfo: {
       clientFullName: clientFullName || clientInfo.clientFullName || '',
-      dob: client?.dateOfBirth || clientInfo.dob || '',
+      dob: toDateInput(client?.dateOfBirth || clientInfo.dob) || '',
       gender: client?.gender || clientInfo.gender || '',
       address: client?.streetAddress || clientInfo.address || '',
       aptSuite: client?.aptSuite || '',
@@ -55,12 +100,14 @@ const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = 
     },
     caregiverInfo: {
       isSelf: false,
-      fullName: caregiver?.fullName || '',
-      employeeId: '',
-      phone: '',
-      email: caregiver?.email || '',
-      dob: '',
-      address: '',
+      fullName: caregiver?.fullName
+        || (candidate ? `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() : '')
+        || '',
+      employeeId: caregiver?.employeeId || '',
+      phone: caregiverPhone,
+      email: caregiver?.email || candidate?.email || '',
+      dob: caregiverDob,
+      address: caregiverAddress,
       aptSuite: '',
       city: '',
       state: '',
@@ -82,8 +129,8 @@ const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = 
     },
     mobileEnrollment: {
       smartphoneType: '',
-      mobileNumber: '',
-      email: caregiver?.email || '',
+      mobileNumber: caregiverPhone,
+      email: caregiver?.email || candidate?.email || '',
     },
     landlineEnrollment: {
       primaryPhone: '',
@@ -110,6 +157,16 @@ const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = 
       notes: '',
     },
   };
+};
+
+const fillBlankCaregiverInfo = (existingInfo = {}, profilePrefill = {}) => {
+  const merged = { ...profilePrefill, ...existingInfo };
+  Object.keys(profilePrefill).forEach((key) => {
+    if (merged[key] === '' || merged[key] == null) {
+      merged[key] = profilePrefill[key];
+    }
+  });
+  return merged;
 };
 
 const formatEvvEnrollment = (doc, extras = {}) => {
@@ -180,10 +237,19 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       _id: caregiverId,
       agencyId,
       role: 'CAREGIVER',
-    });
+    }).populate('candidateId');
     if (!caregiver) continue;
 
-    const prefill = buildPrefillFormData(client, caregiver, agency, carePlanDoc, assignment);
+    const profile = await ensureCaregiverProfile(caregiver);
+    const candidate = profile?.candidate || null;
+    const prefill = buildPrefillFormData(
+      client,
+      caregiver,
+      agency,
+      carePlanDoc,
+      assignment,
+      candidate,
+    );
     let enrollment = await Model.EvvEnrollmentModel.findOne({
       agencyId,
       carePlanId: carePlanDoc._id,
@@ -231,8 +297,14 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
         ...prefill,
         ...enrollment.formData,
         clientInfo: { ...prefill.clientInfo, ...(enrollment.formData?.clientInfo || {}) },
-        caregiverInfo: { ...prefill.caregiverInfo, ...(enrollment.formData?.caregiverInfo || {}) },
+        caregiverInfo: fillBlankCaregiverInfo(enrollment.formData?.caregiverInfo, prefill.caregiverInfo),
         serviceInfo: { ...prefill.serviceInfo, ...(enrollment.formData?.serviceInfo || {}) },
+        mobileEnrollment: {
+          ...prefill.mobileEnrollment,
+          ...(enrollment.formData?.mobileEnrollment || {}),
+          email: enrollment.formData?.mobileEnrollment?.email || prefill.mobileEnrollment.email,
+          mobileNumber: enrollment.formData?.mobileEnrollment?.mobileNumber || prefill.mobileEnrollment.mobileNumber,
+        },
       };
       await enrollment.save();
     }
@@ -392,6 +464,40 @@ const getCaregiverById = async (req, id) => {
     .populate('clientId')
     .populate('carePlanId');
   if (!doc) throw new Error(constants.MESSAGE.EVV_ENROLLMENT.NOT_FOUND);
+
+  const account = await Model.AgencyAccountModel.findById(caregiver._id || caregiver.id)
+    .populate('candidateId');
+  if (account && ['Pending', 'Rejected'].includes(doc.status)) {
+    const profile = await ensureCaregiverProfile(account);
+    const prefill = buildPrefillFormData(
+      doc.clientId,
+      account,
+      null,
+      doc.carePlanId,
+      { serviceAreas: doc.serviceAreas || [] },
+      profile?.candidate || null,
+    );
+    const nextCaregiverInfo = fillBlankCaregiverInfo(
+      doc.formData?.caregiverInfo,
+      prefill.caregiverInfo,
+    );
+    const nextMobile = {
+      ...(doc.formData?.mobileEnrollment || {}),
+      email: doc.formData?.mobileEnrollment?.email || prefill.mobileEnrollment.email,
+      mobileNumber: doc.formData?.mobileEnrollment?.mobileNumber || prefill.mobileEnrollment.mobileNumber,
+    };
+    const changed = JSON.stringify(doc.formData?.caregiverInfo || {}) !== JSON.stringify(nextCaregiverInfo)
+      || JSON.stringify(doc.formData?.mobileEnrollment || {}) !== JSON.stringify(nextMobile);
+    if (changed) {
+      doc.formData = {
+        ...doc.formData,
+        caregiverInfo: nextCaregiverInfo,
+        mobileEnrollment: nextMobile,
+      };
+      await doc.save();
+    }
+  }
+
   return formatEvvEnrollment(doc, { client: doc.clientId, carePlan: doc.carePlanId });
 };
 

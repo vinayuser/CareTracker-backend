@@ -13,4 +13,5 @@ module.exports = {
   CarePlan: require('./agency/carePlan'),
   InsuranceIntake: require('./agency/insuranceIntake'),
   EvvEnrollment: require('./agency/evvEnrollment'),
+  VisitSchedule: require('./agency/visitSchedule'),
 };

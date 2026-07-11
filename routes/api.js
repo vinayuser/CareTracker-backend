@@ -122,6 +122,20 @@ router.post('/agency/evv-enrollments/:id/verify', Auth.authenticate('agency_owne
 router.delete('/agency/evv-enrollments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.remove);
 router.post('/agency/evv-enrollments/sync/:carePlanId', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.syncCarePlan);
 
+router.get('/agency/visit-schedules/options', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getOptions);
+router.get('/agency/visit-schedules/stats', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getStats);
+router.get('/agency/visit-schedules/care-plan/:carePlanId/sources', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getCarePlanSources);
+router.get('/agency/visit-schedules', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getAll);
+router.get('/agency/visit-schedules/:id', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getById);
+router.post('/agency/visit-schedules', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.create);
+router.put('/agency/visit-schedules/:id', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.update);
+router.delete('/agency/visit-schedules/:id', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.remove);
+router.post('/agency/visit-schedules/:id/regenerate', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.regenerate);
+router.get('/agency/visits', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getVisits);
+router.post('/agency/visits/:id/approve', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.approveVisit);
+router.post('/agency/visits/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.rejectVisit);
+router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getEvvDashboard);
+
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
 router.get('/agency/job-applications/job/:jobId/rejected', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getRejectedByJob);
@@ -146,8 +160,12 @@ router.get('/agency/interview-feedback/options', Auth.authenticate('agency_owner
 
 // Caregiver portal — /api/caregiver/*
 router.get('/caregiver/profile', Auth.authenticate('caregiver'), Controller.CaregiverController.getProfile);
+router.get('/caregiver/dashboard', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getCaregiverDashboard);
 router.get('/caregiver/evv-enrollments', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getAll);
 router.get('/caregiver/evv-enrollments/:id', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getById);
 router.post('/caregiver/evv-enrollments/:id/submit', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.submit);
+router.get('/caregiver/visits', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getCaregiverVisits);
+router.post('/caregiver/visits/:id/check-in', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkIn);
+router.post('/caregiver/visits/:id/check-out', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkOut);
 
 module.exports = router;

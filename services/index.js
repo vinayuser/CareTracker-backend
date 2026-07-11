@@ -16,3 +16,4 @@ module.exports.ClientAssessmentService = require('./agency/clientAssessment.serv
 module.exports.CarePlanService = require('./agency/carePlan.service');
 module.exports.InsuranceIntakeService = require('./agency/insuranceIntake.service');
 module.exports.EvvEnrollmentService = require('./agency/evvEnrollment.service');
+module.exports.VisitScheduleService = require('./agency/visitSchedule.service');
