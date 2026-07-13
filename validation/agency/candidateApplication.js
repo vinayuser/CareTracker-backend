@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const documentCodes = Joi.array().items(Joi.string().trim()).optional();
+
 module.exports = {
   apply: Joi.object({
     first_name: Joi.string().trim().required(),
@@ -18,8 +20,13 @@ module.exports = {
     skills: Joi.string().allow('').optional(),
     source_id: Joi.string().allow('').optional(),
     job_id: Joi.string().required(),
+    document_codes: Joi.alternatives().try(documentCodes, Joi.string().allow('')).optional(),
   }),
   setStage: Joi.object({
     stage_id: Joi.string().required(),
+    document_codes: documentCodes,
+  }),
+  stageMove: Joi.object({
+    document_codes: documentCodes,
   }),
 };

@@ -56,15 +56,7 @@ const mapPayloadToJob = (payload) => ({
   status: payload.status || 'Active',
 });
 
-const resolveStageIds = async (agencyId, stageIds) => {
-  if (stageIds?.length) {
-    const stages = await Model.AgencyStageModel.find({
-      _id: { $in: stageIds },
-      agencyId,
-      isActive: true,
-    }).sort({ stageOrder: 1 });
-    return stages.map((s) => s._id);
-  }
+const resolveAgencyPipelineStageIds = async (agencyId) => {
   const stages = await Model.AgencyStageModel.find({ agencyId, isActive: true }).sort({ stageOrder: 1 });
   return stages.map((s) => s._id);
 };
@@ -87,8 +79,13 @@ const create = async (req, payload) => {
   const account = getAgencyAccount(req);
   const data = mapPayloadToJob(payload);
   data.agencyId = agencyId;
-  data.stageIds = await resolveStageIds(agencyId, data.stageIds);
+  // Always use the agency HR pipeline — not selectable per job.
+  data.stageIds = await resolveAgencyPipelineStageIds(agencyId);
   data.createdBy = account?._id || account?.id;
+
+  if (!data.stageIds.length) {
+    throw new Error(constants.MESSAGE.JOB.PIPELINE_REQUIRED);
+  }
 
   const existing = await Model.JobPostModel.findOne({ agencyId, jobCode: data.jobCode });
   if (existing) throw new Error(constants.MESSAGE.JOB.CODE_EXISTS);
@@ -106,9 +103,8 @@ const update = async (req, id, payload) => {
   }
 
   const data = mapPayloadToJob(payload);
-  if (payload.stage_ids !== undefined || payload.stageIds !== undefined) {
-    job.stageIds = await resolveStageIds(agencyId, data.stageIds);
-  }
+  // Keep jobs synced to the current agency HR pipeline.
+  job.stageIds = await resolveAgencyPipelineStageIds(agencyId);
 
   const fields = [
     'jobTitle', 'jobCode', 'jobWorkplace', 'jobLocation', 'description', 'requirements',

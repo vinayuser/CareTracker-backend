@@ -13,6 +13,10 @@ module.exports.getOptions = async (req, res, next) => {
 
 module.exports.get = async (req, res, next) => {
   try {
+    if (req.query.all === '1' || req.query.all === 'true') {
+      const data = await InterviewFeedbackService.getAllForApplication(req, req.params.id);
+      return res.success(constants.MESSAGE.SUCCESS, data);
+    }
     const data = await InterviewFeedbackService.getForApplicationStage(
       req,
       req.params.id,

@@ -30,6 +30,33 @@ const getJobStages = async (job) => getAgencyStagesForJob(job);
 
 const resolveStageId = (ref) => String(ref?._id || ref || '');
 
+const formatStageRef = (stage) => {
+  if (!stage) return null;
+  return {
+    id: String(stage._id),
+    name: stage.name,
+    order: stage.stageOrder,
+    documents: CandidateFormService.formatStageDocumentList(stage),
+  };
+};
+
+const parseDocumentCodes = (payload = {}) => {
+  let codes = payload.document_codes ?? payload.documentCodes;
+  if (codes === undefined || codes === null) return undefined;
+  if (typeof codes === 'string') {
+    const trimmed = codes.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      codes = parsed;
+    } catch {
+      codes = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (!Array.isArray(codes)) return undefined;
+  return codes.map(String).filter(Boolean);
+};
+
 const getStageInfo = async (applicationId, agencyId) => {
   const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId })
     .populate('agencyStageId');
@@ -46,14 +73,15 @@ const getStageInfo = async (applicationId, agencyId) => {
   });
 
   return {
-    stages: stages.map((s) => ({ id: String(s._id), name: s.name, order: s.stageOrder })),
+    stages: stages.map((s) => formatStageRef(s)),
     current_stage: app.agencyStageId ? {
       id: String(app.agencyStageId._id || app.agencyStageId),
       name: app.agencyStageId.name,
       order: app.agencyStageId.stageOrder,
+      documents: CandidateFormService.formatStageDocumentList(app.agencyStageId),
     } : null,
-    next_stage: nextStage ? { id: String(nextStage._id), name: nextStage.name, order: nextStage.stageOrder } : null,
-    previous_stage: previousStage ? { id: String(previousStage._id), name: previousStage.name, order: previousStage.stageOrder } : null,
+    next_stage: formatStageRef(nextStage),
+    previous_stage: formatStageRef(previousStage),
     is_first_stage: currentIndex === 0,
     is_final_stage: currentIndex === stages.length - 1,
     status: app.status,
@@ -195,7 +223,11 @@ const applyForJob = async (req, payload) => {
   }
 
   try {
-    const formAccess = await CandidateFormService.issueStageAccess(req, application._id);
+    const formAccess = await CandidateFormService.issueStageAccess(
+      req,
+      application._id,
+      { documentCodes: parseDocumentCodes(payload) },
+    );
     if (!formAccess.skipped) {
       formatted.form_url = formAccess.form_url;
       formatted.form_progress = formAccess.access ? {
@@ -236,7 +268,7 @@ const getAllApplications = async (req, query = {}) => {
   }));
 };
 
-const setStage = async (req, applicationId, stageId) => {
+const setStage = async (req, applicationId, stageId, options = {}) => {
   const agencyId = getAgencyId(req);
   const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId });
   if (!app) throw new Error(constants.MESSAGE.CANDIDATE.APPLICATION_NOT_FOUND);
@@ -251,7 +283,9 @@ const setStage = async (req, applicationId, stageId) => {
   await app.save();
 
   try {
-    await CandidateFormService.issueStageAccess(req, applicationId);
+    await CandidateFormService.issueStageAccess(req, applicationId, {
+      documentCodes: parseDocumentCodes({ document_codes: options.documentCodes }),
+    });
   } catch (err) {
     console.error('[setStage] form access issue failed', err.message);
   }
@@ -451,7 +485,7 @@ const completeHire = async (req, applicationId) => {
   };
 };
 
-const moveToNextStage = async (req, applicationId) => {
+const moveToNextStage = async (req, applicationId, options = {}) => {
   const agencyId = getAgencyId(req);
   const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId });
   if (!app) throw new Error(constants.MESSAGE.CANDIDATE.APPLICATION_NOT_FOUND);
@@ -468,7 +502,9 @@ const moveToNextStage = async (req, applicationId) => {
   await app.save();
 
   try {
-    await CandidateFormService.issueStageAccess(req, applicationId);
+    await CandidateFormService.issueStageAccess(req, applicationId, {
+      documentCodes: parseDocumentCodes({ document_codes: options.documentCodes }),
+    });
   } catch (err) {
     console.error('[moveToNextStage] form access issue failed', err.message);
   }
@@ -479,7 +515,7 @@ const moveToNextStage = async (req, applicationId) => {
   return formatApplicationPopulated(populated);
 };
 
-const moveToPreviousStage = async (req, applicationId) => {
+const moveToPreviousStage = async (req, applicationId, options = {}) => {
   const agencyId = getAgencyId(req);
   const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId });
   if (!app) throw new Error(constants.MESSAGE.CANDIDATE.APPLICATION_NOT_FOUND);
@@ -496,7 +532,9 @@ const moveToPreviousStage = async (req, applicationId) => {
   await app.save();
 
   try {
-    await CandidateFormService.issueStageAccess(req, applicationId);
+    await CandidateFormService.issueStageAccess(req, applicationId, {
+      documentCodes: parseDocumentCodes({ document_codes: options.documentCodes }),
+    });
   } catch (err) {
     console.error('[moveToPreviousStage] form access issue failed', err.message);
   }

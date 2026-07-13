@@ -18,7 +18,6 @@ const jobFields = {
   annual_salary_to: Joi.number().greater(Joi.ref('annual_salary_from')).required(),
   currency: Joi.string().trim().max(10).required(),
   showOnCareerPage: Joi.boolean().optional(),
-  stage_ids: Joi.array().items(Joi.string()).min(1).optional(),
   status: Joi.string().valid('Active', 'Closed', 'Draft').optional(),
 };
 

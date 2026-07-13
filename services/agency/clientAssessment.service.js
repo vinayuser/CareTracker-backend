@@ -101,9 +101,11 @@ const mapAssessmentToClientPayload = (formData = {}) => {
     physicianPhone: physician.primaryPhysicianPhone || '',
     pharmacyName: physician.pharmacy || '',
     pharmacyPhone: physician.pharmacyPhone || '',
+    preferredHospital: physician.preferredHospital || '',
     insuranceProvider: (insurance.types || []).join(', '),
     insuranceMemberId: insurance.policyNumber || '',
     insuranceGroupNumber: insurance.authorizationNumber || '',
+    primaryDiagnosis: ci.primaryDiagnosis || '',
     emergencyContactName: emergency.primaryName || '',
     emergencyContactRelationship: emergency.primaryRelationship || '',
     emergencyContactPhone: emergency.primaryPhone || '',
@@ -117,6 +119,47 @@ const mapAssessmentToClientPayload = (formData = {}) => {
     carePlanStartDate: formData.carePlanSummary?.startOfCareDate || '',
     status: 'Active',
     intakeDate: new Date().toISOString().split('T')[0],
+  };
+};
+
+/** Seed care-plan form sections from assessment physician / insurance / client info. */
+const mapAssessmentToCarePlanFormData = (formData = {}) => {
+  const ci = formData.clientInfo || {};
+  const contact = formData.contactInfo || {};
+  const emergency = formData.emergencyInfo || {};
+  const physician = formData.physicianInfo || {};
+  const insurance = formData.insurance || {};
+
+  return {
+    clientInfo: {
+      clientName: ci.clientName || '',
+      dob: ci.dob || '',
+      address: contact.homeAddress || '',
+      city: contact.city || '',
+      state: contact.state || '',
+      zip: contact.zip || '',
+      phone: contact.mobile || contact.homePhone || '',
+      email: contact.email || '',
+      primaryLanguage: ci.primaryLanguage || '',
+      gender: ci.gender || '',
+      maritalStatus: ci.maritalStatus || '',
+      emergencyContact: emergency.primaryName || '',
+      emergencyRelationship: emergency.primaryRelationship || '',
+      emergencyPhone: emergency.primaryPhone || '',
+    },
+    medicalInfo: {
+      primaryDiagnosis: ci.primaryDiagnosis || '',
+      otherDiagnoses: ci.secondaryDiagnoses || '',
+      allergies: formData.allergies?.details || (formData.allergies?.types || []).join(', '),
+      physician: physician.primaryPhysician || '',
+      physicianPhone: physician.primaryPhysicianPhone || '',
+    },
+    supplementary: {
+      preferredHospital: physician.preferredHospital || '',
+      preferredPharmacy: physician.pharmacy || '',
+      healthInsurance: (insurance.types || []).join(', '),
+      policyId: insurance.policyNumber || '',
+    },
   };
 };
 
@@ -195,6 +238,23 @@ const update = async (req, id, payload) => {
   }
 
   await doc.save();
+
+  // Keep draft care-plan form in sync when assessment is edited after quote
+  if (payload.formData && doc.carePlanId) {
+    const plan = await Model.CarePlanModel.findOne({ _id: doc.carePlanId, agencyId });
+    if (plan && plan.quoteStatus !== 'Accepted') {
+      const seeded = mapAssessmentToCarePlanFormData(payload.formData);
+      const existing = plan.formData?.toObject?.() || plan.formData || {};
+      plan.formData = {
+        ...existing,
+        clientInfo: { ...(existing.clientInfo || {}), ...seeded.clientInfo },
+        medicalInfo: { ...(existing.medicalInfo || {}), ...seeded.medicalInfo },
+        supplementary: { ...(existing.supplementary || {}), ...seeded.supplementary },
+      };
+      await plan.save();
+    }
+  }
+
   return formatAssessment(doc);
 };
 
@@ -220,6 +280,8 @@ const generateQuote = async (req, id, pricing) => {
   const hourlyRate = pricing.hourlyRate ?? 0;
   const quotedMonthlyPrice = pricing.quotedMonthlyPrice ?? Math.round(weeklyHours * hourlyRate * 4.33 * 100) / 100;
 
+  const seededForm = mapAssessmentToCarePlanFormData(formData);
+
   const plan = await Model.CarePlanModel.create({
     agencyId,
     assessmentId: assessment._id,
@@ -233,6 +295,7 @@ const generateQuote = async (req, id, pricing) => {
     reviewDate: '',
     assessmentNotes: formData.coordinatorNotes || '',
     services: mapRequestedServices(formData.requestedServices),
+    formData: seededForm,
     createdByAccountId: getAccountId(req),
   });
 
@@ -265,11 +328,19 @@ const acceptQuote = async (req, id) => {
   if (!plan) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
 
   const client = await createClient(req, mapAssessmentToClientPayload(assessment.formData));
+  const seededForm = mapAssessmentToCarePlanFormData(assessment.formData);
+  const existingForm = plan.formData?.toObject?.() || plan.formData || {};
 
   plan.clientId = client.id;
   plan.status = 'Active';
   plan.quoteStatus = 'Accepted';
   plan.agreementDate = new Date().toISOString().split('T')[0];
+  plan.formData = {
+    ...existingForm,
+    clientInfo: { ...(existingForm.clientInfo || {}), ...seededForm.clientInfo },
+    medicalInfo: { ...(existingForm.medicalInfo || {}), ...seededForm.medicalInfo },
+    supplementary: { ...(existingForm.supplementary || {}), ...seededForm.supplementary },
+  };
   await plan.save();
 
   assessment.clientId = client.id;

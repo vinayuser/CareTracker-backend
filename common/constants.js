@@ -56,6 +56,7 @@ module.exports = {
       HIRING_REOPENED: 'Hiring cycle reopened for this job',
       HIRING_COMPLETE_REQUIRES_HIRE: 'At least one candidate must be hired before completing the hiring cycle',
       HIRING_CYCLE_LOCKED: 'Reopen the hiring cycle before adding candidates or editing this job',
+      PIPELINE_REQUIRED: 'Configure the hiring pipeline before posting a job',
     },
     CANDIDATE: {
       APPLIED: 'Candidate added to job successfully',
@@ -91,6 +92,8 @@ module.exports = {
       SUBMITTED: 'Form submitted successfully',
       EMAIL_RESENT: 'Form link email sent',
       NO_FORMS_FOR_STAGE: 'This stage has no forms configured',
+      NO_FORMS_SELECTED: 'Select at least one form to send to the candidate',
+      INVALID_DOCUMENT_CODES: 'One or more selected forms are not assigned to this stage',
       PDF_REQUIRED: 'Filled PDF document is required',
       USE_PDF_SUBMIT: 'This form must be submitted using the online PDF form',
       FORM_RESET: 'Form reset — candidate can fill again',

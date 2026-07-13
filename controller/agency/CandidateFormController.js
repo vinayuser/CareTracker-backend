@@ -99,7 +99,10 @@ module.exports.getPrintData = async (req, res, next) => {
 
 module.exports.resendEmail = async (req, res, next) => {
   try {
-    const data = await CandidateFormService.resendStageEmail(req, req.params.id);
+    await Validation.CandidateForm.resendEmail.validateAsync(req.body || {});
+    const data = await CandidateFormService.resendStageEmail(req, req.params.id, {
+      documentCodes: req.body?.document_codes,
+    });
     return res.success(constants.MESSAGE.CANDIDATE_FORM.EMAIL_RESENT, data);
   } catch (error) {
     next(error);

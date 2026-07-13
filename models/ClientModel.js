@@ -45,6 +45,7 @@ const ClientSchema = new mongoose.Schema(
     lastVisitDate: { type: String, default: '' },
     pharmacyName: { type: String, default: '' },
     pharmacyPhone: { type: String, default: '' },
+    preferredHospital: { type: String, default: '' },
     insuranceProvider: { type: String, default: '' },
     insuranceMemberId: { type: String, default: '' },
     insuranceGroupNumber: { type: String, default: '' },

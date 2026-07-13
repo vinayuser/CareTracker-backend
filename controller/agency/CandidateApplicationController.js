@@ -46,6 +46,7 @@ module.exports.setStage = async (req, res, next) => {
       req,
       req.params.id,
       req.body.stage_id,
+      { documentCodes: req.body.document_codes },
     );
     return res.success(constants.MESSAGE.CANDIDATE.STAGE_UPDATED, data);
   } catch (error) {
@@ -64,7 +65,10 @@ module.exports.completeHire = async (req, res, next) => {
 
 module.exports.moveToNextStage = async (req, res, next) => {
   try {
-    const data = await CandidateApplicationService.moveToNextStage(req, req.params.id);
+    await Validation.CandidateApplication.stageMove.validateAsync(req.body || {});
+    const data = await CandidateApplicationService.moveToNextStage(req, req.params.id, {
+      documentCodes: req.body?.document_codes,
+    });
     return res.success(constants.MESSAGE.CANDIDATE.STAGE_UPDATED, data);
   } catch (error) {
     next(error);
@@ -73,7 +77,10 @@ module.exports.moveToNextStage = async (req, res, next) => {
 
 module.exports.moveToPreviousStage = async (req, res, next) => {
   try {
-    const data = await CandidateApplicationService.moveToPreviousStage(req, req.params.id);
+    await Validation.CandidateApplication.stageMove.validateAsync(req.body || {});
+    const data = await CandidateApplicationService.moveToPreviousStage(req, req.params.id, {
+      documentCodes: req.body?.document_codes,
+    });
     return res.success(constants.MESSAGE.CANDIDATE.STAGE_UPDATED, data);
   } catch (error) {
     next(error);

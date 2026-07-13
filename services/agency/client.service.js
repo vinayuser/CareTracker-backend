@@ -10,7 +10,7 @@ const CLIENT_PAYLOAD_FIELDS = [
   'preferredLanguage', 'ethnicity', 'race',
   'emergencyContactName', 'emergencyContactRelationship', 'emergencyContactPhone',
   'alternateContactName', 'alternateContactRelationship', 'alternateContactPhone',
-  'physicianName', 'physicianPhone', 'lastVisitDate', 'pharmacyName', 'pharmacyPhone',
+  'physicianName', 'physicianPhone', 'lastVisitDate', 'pharmacyName', 'pharmacyPhone', 'preferredHospital',
   'insuranceProvider', 'insuranceMemberId', 'insuranceGroupNumber',
   'medicalConditions', 'primaryDiagnosis', 'allergies', 'currentMedications', 'specialDiet', 'mobility',
   'livingArrangements', 'livingArrangement', 'homeAccessibility', 'residenceType', 'assistiveDevices',

@@ -2,6 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { sanitizeModuleAccess, DEFAULT_HR_MODULES } = require('../../common/agencyModules');
+const { sendHrWelcomeEmail } = require('../common/mail.service');
 
 const formatHrStaff = (doc) => {
   const client = functions.toClientDoc(doc);
@@ -135,6 +136,20 @@ const create = async (req, payload) => {
     role: 'HR',
     moduleAccess,
   });
+
+  try {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name');
+    await sendHrWelcomeEmail({
+      to: payload.email.toLowerCase(),
+      hrName: `${payload.firstName} ${payload.lastName}`.trim(),
+      agencyName: agency?.name,
+      email: payload.email.toLowerCase(),
+      password: payload.password,
+      jobTitle: payload.jobTitle,
+    });
+  } catch (err) {
+    console.error('[hrStaff.create] welcome email failed', err.message);
+  }
 
   return formatHrStaff(hrStaff);
 };

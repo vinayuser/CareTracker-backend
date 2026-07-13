@@ -87,7 +87,27 @@ const getById = async (req, id) => {
   const agencyId = getAgencyId(req);
   const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId }).populate('clientId');
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
-  return formatCarePlan(doc, doc.clientId);
+  const plan = formatCarePlan(doc, doc.clientId);
+
+  // Backfill physician / pharmacy / policy / hospital from linked assessment when client fields are empty
+  if (doc.assessmentId && plan.client) {
+    const assessment = await Model.ClientAssessmentModel.findOne({ _id: doc.assessmentId, agencyId }).lean();
+    const physician = assessment?.formData?.physicianInfo || {};
+    const insurance = assessment?.formData?.insurance || {};
+    const c = plan.client;
+    plan.client = {
+      ...c,
+      physicianName: c.physicianName || physician.primaryPhysician || '',
+      physicianPhone: c.physicianPhone || physician.primaryPhysicianPhone || '',
+      pharmacyName: c.pharmacyName || physician.pharmacy || '',
+      pharmacyPhone: c.pharmacyPhone || physician.pharmacyPhone || '',
+      preferredHospital: c.preferredHospital || physician.preferredHospital || '',
+      insuranceProvider: c.insuranceProvider || (insurance.types || []).join(', '),
+      insuranceMemberId: c.insuranceMemberId || insurance.policyNumber || '',
+    };
+  }
+
+  return plan;
 };
 
 const QUOTE_STATUSES = ['Quoted', 'Accepted', 'Declined'];

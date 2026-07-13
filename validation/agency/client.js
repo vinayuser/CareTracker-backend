@@ -38,6 +38,7 @@ const clientFields = {
   lastVisitDate: stringField,
   pharmacyName: stringField,
   pharmacyPhone: stringField,
+  preferredHospital: stringField,
   insuranceProvider: stringField,
   insuranceMemberId: stringField,
   insuranceGroupNumber: stringField,

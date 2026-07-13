@@ -26,6 +26,35 @@ const loadApplicationContext = async (applicationId) => {
 
 const getStageDocuments = (stage) => (stage?.documents || []).slice().sort((a, b) => a.order - b.order);
 
+const formatStageDocumentList = (stage) => getStageDocuments(stage).map((d) => ({
+  code: d.code,
+  name: d.name,
+  is_required: Boolean(d.isRequired),
+  order: d.order,
+}));
+
+const filterDocumentsByCodes = (documents, documentCodes) => {
+  if (!Array.isArray(documentCodes)) return documents;
+  const set = new Set(documentCodes.map(String));
+  return documents.filter((d) => set.has(String(d.code)));
+};
+
+/** Documents visible for an access token (selected subset, or all stage docs for legacy access). */
+const resolveIssuedDocuments = (stage, access) => {
+  const all = getStageDocuments(stage);
+  if (access?.documentCodes?.length) {
+    return filterDocumentsByCodes(all, access.documentCodes);
+  }
+  return all;
+};
+
+const assertDocumentIssued = (access, documentCode) => {
+  if (!access?.documentCodes?.length) return;
+  if (!access.documentCodes.includes(documentCode)) {
+    throw new Error(constants.MESSAGE.CANDIDATE_FORM.DOCUMENT_NOT_FOUND);
+  }
+};
+
 const ensureSubmissionsForStage = async ({
   agencyId,
   applicationId,
@@ -71,9 +100,24 @@ const maybeCompleteStageAccess = async (accessId) => {
   if (!access || access.status !== 'Active') return;
 
   const stage = await Model.AgencyStageModel.findById(access.stageId);
-  const documents = getStageDocuments(stage);
+  const documents = resolveIssuedDocuments(stage, access);
   const requiredCodes = documents.filter((d) => d.isRequired).map((d) => d.code);
-  if (requiredCodes.length === 0) return;
+  if (requiredCodes.length === 0) {
+    // No required forms among issued set — complete when all issued are submitted
+    if (documents.length === 0) return;
+    const submittedCount = await Model.CandidateFormSubmissionModel.countDocuments({
+      applicationId: access.applicationId,
+      stageId: access.stageId,
+      documentCode: { $in: documents.map((d) => d.code) },
+      status: 'Submitted',
+    });
+    if (submittedCount >= documents.length) {
+      access.status = 'Completed';
+      access.completedAt = new Date();
+      await access.save();
+    }
+    return;
+  }
 
   const submittedCount = await Model.CandidateFormSubmissionModel.countDocuments({
     applicationId: access.applicationId,
@@ -121,6 +165,7 @@ const formatAccess = (doc) => {
   client.form_url = functions.buildCandidateFormUrl(doc.token);
   client.email_sent_at = doc.emailSentAt ? new Date(doc.emailSentAt).toISOString() : null;
   client.expires_at = doc.expiresAt ? new Date(doc.expiresAt).toISOString() : null;
+  client.document_codes = doc.documentCodes || [];
   return client;
 };
 
@@ -151,7 +196,7 @@ const buildFormProgress = (documents, submissions, access) => {
   };
 };
 
-const issueStageAccess = async (req, applicationId) => {
+const issueStageAccess = async (req, applicationId, options = {}) => {
   const application = await loadApplicationContext(applicationId);
   const agencyId = String(application.agencyId);
   if (getAgencyId(req) && String(getAgencyId(req)) !== agencyId) {
@@ -163,14 +208,26 @@ const issueStageAccess = async (req, applicationId) => {
     return { skipped: true, reason: 'no_stage' };
   }
 
-  const documents = getStageDocuments(stage);
+  let documents = getStageDocuments(stage);
   if (documents.length === 0) {
     return { skipped: true, reason: 'no_documents' };
+  }
+
+  if (Array.isArray(options.documentCodes)) {
+    if (options.documentCodes.length === 0) {
+      return { skipped: true, reason: 'no_forms_selected' };
+    }
+    const selected = filterDocumentsByCodes(documents, options.documentCodes);
+    if (!selected.length) {
+      throw new Error(constants.MESSAGE.CANDIDATE_FORM.INVALID_DOCUMENT_CODES);
+    }
+    documents = selected;
   }
 
   await expireActiveAccessForApplication(application._id);
 
   const token = functions.generateCandidateFormToken();
+  const documentCodes = documents.map((d) => d.code);
   const access = await Model.CandidateStageAccessModel.create({
     agencyId: application.agencyId,
     applicationId: application._id,
@@ -178,6 +235,7 @@ const issueStageAccess = async (req, applicationId) => {
     jobPostId: application.jobPostId?._id || application.jobPostId,
     stageId: stage._id,
     token,
+    documentCodes,
     status: 'Active',
     expiresAt: generateExpiresAt(),
   });
@@ -205,6 +263,7 @@ const issueStageAccess = async (req, applicationId) => {
         stageName: stage.name,
         agencyName: agency?.name,
         formUrl,
+        formNames: documents.map((d) => d.name),
       });
       access.emailSentAt = new Date();
       await access.save();
@@ -216,6 +275,7 @@ const issueStageAccess = async (req, applicationId) => {
   return {
     skipped: false,
     form_url: formUrl,
+    document_codes: documentCodes,
     access: formatAccess(access),
     email: emailResult,
   };
@@ -264,9 +324,10 @@ const enrichApplicationsWithFormProgress = async (applications, stageId) => {
     const appId = String(app.id || app._id);
     const access = accessByApp[appId] || null;
     const subs = submissionsByApp[appId] || [];
+    const issuedDocs = access ? resolveIssuedDocuments(stage, access) : documents;
     return {
       ...app,
-      form_progress: buildFormProgress(documents, subs, access),
+      form_progress: buildFormProgress(issuedDocs, subs, access),
     };
   });
 };
@@ -296,10 +357,11 @@ const getPortalByToken = async (token) => {
     Model.AgencyModel.findById(access.agencyId).select('name'),
   ]);
 
-  const documents = getStageDocuments(stage);
+  const documents = resolveIssuedDocuments(stage, access);
   const submissions = await Model.CandidateFormSubmissionModel.find({
     applicationId: access.applicationId,
     stageId: access.stageId,
+    ...(documents.length ? { documentCode: { $in: documents.map((d) => d.code) } } : {}),
   });
 
   const candidate = application?.candidateId;
@@ -324,7 +386,8 @@ const getPortalByToken = async (token) => {
 const getDocumentFormByToken = async (token, documentCode) => {
   const access = await resolveTokenAccess(token);
   const stage = await Model.AgencyStageModel.findById(access.stageId);
-  const docMeta = getStageDocuments(stage).find((d) => d.code === documentCode);
+  const documents = resolveIssuedDocuments(stage, access);
+  const docMeta = documents.find((d) => d.code === documentCode);
   if (!docMeta) throw new Error(constants.MESSAGE.CANDIDATE_FORM.DOCUMENT_NOT_FOUND);
 
   let submission = await Model.CandidateFormSubmissionModel.findOne({
@@ -370,6 +433,7 @@ const getDocumentFormByToken = async (token, documentCode) => {
 
 const saveDocumentDraft = async (token, documentCode, formData) => {
   const access = await resolveTokenAccess(token);
+  assertDocumentIssued(access, documentCode);
   const submission = await Model.CandidateFormSubmissionModel.findOne({
     applicationId: access.applicationId,
     stageId: access.stageId,
@@ -389,6 +453,7 @@ const saveDocumentDraft = async (token, documentCode, formData) => {
 
 const submitPdfDocument = async (token, documentCode, formData, file) => {
   const access = await resolveTokenAccess(token);
+  assertDocumentIssued(access, documentCode);
   if (!hasPdfForm(documentCode)) {
     throw new Error(constants.MESSAGE.CANDIDATE_FORM.DOCUMENT_NOT_FOUND);
   }
@@ -436,6 +501,7 @@ const submitDocument = async (token, documentCode, formData) => {
     throw new Error(constants.MESSAGE.CANDIDATE_FORM.USE_PDF_SUBMIT);
   }
   const access = await resolveTokenAccess(token);
+  assertDocumentIssued(access, documentCode);
   validateSubmissionPayload(documentCode, formData);
 
   const submission = await Model.CandidateFormSubmissionModel.findOne({
@@ -475,7 +541,6 @@ const getSubmissionsForAgency = async (req, applicationId, stageId = null) => {
 
   const resolvedStageId = stageId || application.agencyStageId;
   const stage = await Model.AgencyStageModel.findById(resolvedStageId);
-  const documents = getStageDocuments(stage);
 
   const [submissions, access] = await Promise.all([
     Model.CandidateFormSubmissionModel.find({
@@ -485,9 +550,13 @@ const getSubmissionsForAgency = async (req, applicationId, stageId = null) => {
     getActiveAccessForApplicationStage(applicationId, resolvedStageId),
   ]);
 
+  const documents = resolveIssuedDocuments(stage, access);
+  const availableDocuments = formatStageDocumentList(stage);
+
   return {
     application_id: String(applicationId),
     stage: stage ? { id: String(stage._id), name: stage.name } : null,
+    available_documents: availableDocuments,
     form_progress: buildFormProgress(documents, submissions, access),
     submissions: submissions.map(formatSubmission),
     access: formatAccess(access),
@@ -531,9 +600,19 @@ const getSubmissionForPrint = async (req, applicationId, submissionId) => {
   };
 };
 
-const resendStageEmail = async (req, applicationId) => {
-  const result = await issueStageAccess(req, applicationId);
+const resendStageEmail = async (req, applicationId, options = {}) => {
+  let documentCodes = options.documentCodes;
+  if (documentCodes === undefined && (options.document_codes !== undefined || req.body)) {
+    const raw = options.document_codes ?? req.body?.document_codes;
+    if (raw !== undefined) {
+      documentCodes = Array.isArray(raw) ? raw.map(String).filter(Boolean) : undefined;
+    }
+  }
+  const result = await issueStageAccess(req, applicationId, { documentCodes });
   if (result.skipped) {
+    if (result.reason === 'no_forms_selected') {
+      throw new Error(constants.MESSAGE.CANDIDATE_FORM.NO_FORMS_SELECTED);
+    }
     throw new Error(constants.MESSAGE.CANDIDATE_FORM.NO_FORMS_FOR_STAGE);
   }
   return result;
@@ -583,7 +662,7 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
   }).sort({ createdAt: -1 });
 
   if (!access) {
-    const issued = await issueStageAccess(req, applicationId);
+    const issued = await issueStageAccess(req, applicationId, { documentCodes: [documentCode] });
     return {
       submission: formatSubmission(submission),
       form_url: issued.form_url,
@@ -595,6 +674,10 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
     access.status = 'Active';
     access.completedAt = undefined;
   }
+  // Ensure reset form remains in the issued set
+  const codes = new Set(access.documentCodes || []);
+  codes.add(documentCode);
+  access.documentCodes = [...codes];
   access.expiresAt = generateExpiresAt();
   await access.save();
 
@@ -622,7 +705,7 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
   }
 
   const submissions = await Model.CandidateFormSubmissionModel.find({ applicationId, stageId });
-  const documents = getStageDocuments(stage);
+  const documents = resolveIssuedDocuments(stage, access);
 
   return {
     submission: formatSubmission(submission),
@@ -644,4 +727,6 @@ module.exports = {
   getSubmissionForPrint,
   resendStageEmail,
   resetFormSubmission,
+  formatStageDocumentList,
+  getStageDocuments,
 };

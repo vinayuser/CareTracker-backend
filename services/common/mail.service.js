@@ -142,15 +142,22 @@ const sendCandidateStageFormsEmail = async ({
   stageName,
   agencyName,
   formUrl,
+  formNames = [],
 }) => {
   const agency = agencyName || 'Your agency';
   const subject = `Complete your ${stageName} forms — ${jobTitle}`;
+  const formsListText = formNames.length
+    ? `\nForms to complete:\n${formNames.map((n) => `• ${n}`).join('\n')}\n`
+    : '';
+  const formsListHtml = formNames.length
+    ? `<ul style="margin:0 0 16px;padding-left:20px;color:#334155;">${formNames.map((n) => `<li style="margin:4px 0;">${escapeHtml(n)}</li>`).join('')}</ul>`
+    : '';
 
   const text = [
     `Hello ${candidateName},`,
     '',
-    `${agency} has invited you to complete required forms for the "${stageName}" stage of your application for ${jobTitle}.`,
-    '',
+    `${agency} has invited you to complete forms for the "${stageName}" stage of your application for ${jobTitle}.`,
+    formsListText,
     'Open your secure form link:',
     formUrl,
     '',
@@ -163,10 +170,11 @@ const sendCandidateStageFormsEmail = async ({
   const html = wrapEmail(`Complete your ${stageName} forms`, `
     <p style="margin:0 0 12px;">Hello ${escapeHtml(candidateName)},</p>
     <p style="margin:0 0 12px;">
-      <strong>${escapeHtml(agency)}</strong> has invited you to complete required forms for the
+      <strong>${escapeHtml(agency)}</strong> has invited you to complete forms for the
       <strong>${escapeHtml(stageName)}</strong> stage of your application for
       <strong>${escapeHtml(jobTitle)}</strong>.
     </p>
+    ${formsListHtml}
     ${ctaButton(formUrl, 'Complete Forms')}
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">
       Or copy this link:<br />
@@ -281,6 +289,58 @@ const sendCaregiverWelcomeEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+/** Welcome email when an HR account is created by the agency owner */
+const sendHrWelcomeEmail = async ({
+  to,
+  hrName,
+  agencyName,
+  email,
+  password,
+  jobTitle,
+  loginUrl,
+}) => {
+  const agency = agencyName || 'Your agency';
+  const portalUrl = loginUrl || `${getFrontendUrl()}/login`;
+  const subject = `Welcome to ${agency} — your HR account`;
+
+  const text = [
+    `Hello ${hrName},`,
+    '',
+    `${agency} has created your CareTraker HR account${jobTitle ? ` (${jobTitle})` : ''}.`,
+    '',
+    `Login email: ${email}`,
+    `Password: ${password}`,
+    '',
+    'Please sign in and change your password after your first login.',
+    '',
+    `Sign in: ${portalUrl}`,
+    '',
+    'Thank you,',
+    agency,
+  ].join('\n');
+
+  const html = wrapEmail('Welcome to CareTraker HR', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(hrName)},</p>
+    <p style="margin:0 0 12px;">
+      <strong>${escapeHtml(agency)}</strong> has created your CareTraker HR account
+      ${jobTitle ? ` for the role of <strong>${escapeHtml(jobTitle)}</strong>` : ''}.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:16px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Login email</span><br /><strong>${escapeHtml(email)}</strong></p>
+        <p style="margin:0;"><span style="color:#64748b;">Password</span><br /><strong style="font-family:Consolas,Monaco,monospace;letter-spacing:0.02em;">${escapeHtml(password)}</strong></p>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 12px;font-size:13px;color:#64748b;">Please change your password after signing in.</p>
+    ${ctaButton(portalUrl, 'Sign in to CareTraker')}
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      Thank you,<br /><strong style="color:#0f172a;">${escapeHtml(agency)}</strong>
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
 /** When an EVV enrollment form is assigned to a caregiver */
 const sendEvvEnrollmentAssignedEmail = async ({
   to,
@@ -328,6 +388,7 @@ module.exports = {
   sendCandidateStageFormsEmail,
   sendCandidateFormResetEmail,
   sendCaregiverWelcomeEmail,
+  sendHrWelcomeEmail,
   sendEvvEnrollmentAssignedEmail,
   isConfigured,
 };

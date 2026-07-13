@@ -8,6 +8,8 @@ const CandidateStageAccessSchema = new mongoose.Schema(
     jobPostId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobPost', required: true },
     stageId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyStage', required: true },
     token: { type: String, required: true, unique: true, index: true },
+    /** Forms included in this access / emailed to the candidate (subset of stage documents). */
+    documentCodes: [{ type: String }],
     status: {
       type: String,
       enum: ['Active', 'Expired', 'Completed'],
