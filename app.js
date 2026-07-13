@@ -28,6 +28,9 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/documents', express.static(path.join(__dirname, 'documents')));
+// Same assets under /api/* so nginx location /api/ can serve them without extra config
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/documents', express.static(path.join(__dirname, 'documents')));
 
 app.get('/api/health', (req, res) => {
   const mongoReady = connection.isMongoReady();

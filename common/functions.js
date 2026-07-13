@@ -106,9 +106,10 @@ module.exports.buildDocumentTemplateUrl = function (relativePath, req) {
   if (clean.startsWith('documents/')) {
     clean = clean.slice('documents/'.length);
   }
-  const path = `/documents/${clean.split('/').map(encodeURIComponent).join('/')}`;
+  // Serve via /api/documents so production nginx /api/ proxy works (avoids SPA HTML 404)
+  const pathSuffix = `/api/documents/${clean.split('/').map(encodeURIComponent).join('/')}`;
   const base = module.exports.getApiBaseUrl(req);
-  return `${base}${path}`;
+  return `${base}${pathSuffix}`;
 };
 
 module.exports.toClientDoc = (doc) => {
