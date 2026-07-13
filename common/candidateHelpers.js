@@ -13,7 +13,10 @@ const parseExperience = (value) => {
 
 const buildUploadUrl = (storedPath) => {
   if (!storedPath) return '';
-  return `/uploads/${storedPath.replace(/^\/+/, '')}`;
+  let clean = String(storedPath).replace(/^\/+/, '');
+  if (clean.startsWith('uploads/')) clean = clean.slice('uploads/'.length);
+  if (clean.startsWith('api/uploads/')) clean = clean.slice('api/uploads/'.length);
+  return `/api/uploads/${clean}`;
 };
 
 module.exports = { parseExperience, buildUploadUrl };

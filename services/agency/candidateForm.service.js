@@ -140,7 +140,7 @@ const formatSubmission = (doc, req) => {
   client.document_name = client.documentName;
   client.form_data = client.formData || {};
   client.filled_pdf_url = client.filledPdfPath
-    ? `${functions.getApiBaseUrl(req)}/uploads/${String(client.filledPdfPath).replace(/^\/+/, '')}`
+    ? functions.buildUploadUrl(client.filledPdfPath, req)
     : null;
   client.submitted_at = client.submittedAt
     ? new Date(client.submittedAt).toISOString()
@@ -425,7 +425,7 @@ const getDocumentFormByToken = async (token, documentCode, req) => {
     url: templateUrl,
     form_data: submission.formData || buildEmptyFormData(documentCode),
     filled_pdf_url: submission.filledPdfPath
-      ? `${functions.getApiBaseUrl(req)}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
+      ? functions.buildUploadUrl(submission.filledPdfPath, req)
       : null,
     read_only: submission.status === 'Submitted',
   };
@@ -586,7 +586,7 @@ const getSubmissionForPrint = async (req, applicationId, submissionId) => {
     form_type: schema.type,
     document_name: submission.documentName,
     pdf_url: submission.filledPdfPath
-      ? `${functions.getApiBaseUrl(req)}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
+      ? functions.buildUploadUrl(submission.filledPdfPath, req)
       : null,
     candidate: candidate ? {
       first_name: candidate.firstName,

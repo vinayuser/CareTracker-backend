@@ -112,6 +112,20 @@ module.exports.buildDocumentTemplateUrl = function (relativePath, req) {
   return `${base}${pathSuffix}`;
 };
 
+/** Public URL for files under uploads/ (filled PDFs, resumes, etc.) via /api/uploads. */
+module.exports.buildUploadUrl = function (relativePath, req) {
+  let clean = String(relativePath || '').replace(/^\/+/, '');
+  if (clean.startsWith('uploads/')) {
+    clean = clean.slice('uploads/'.length);
+  }
+  if (clean.startsWith('api/uploads/')) {
+    clean = clean.slice('api/uploads/'.length);
+  }
+  const pathSuffix = `/api/uploads/${clean.split('/').map(encodeURIComponent).join('/')}`;
+  const base = module.exports.getApiBaseUrl(req);
+  return `${base}${pathSuffix}`;
+};
+
 module.exports.toClientDoc = (doc) => {
   if (!doc) return null;
   const obj = typeof doc.toJSON === 'function' ? doc.toJSON() : { ...doc };
