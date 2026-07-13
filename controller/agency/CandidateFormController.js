@@ -4,7 +4,7 @@ const { CandidateFormService } = require('../../services');
 
 module.exports.getPortal = async (req, res, next) => {
   try {
-    const data = await CandidateFormService.getPortalByToken(req.params.token);
+    const data = await CandidateFormService.getPortalByToken(req.params.token, req);
     return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
     next(error);
@@ -16,6 +16,7 @@ module.exports.getDocument = async (req, res, next) => {
     const data = await CandidateFormService.getDocumentFormByToken(
       req.params.token,
       req.params.documentCode,
+      req,
     );
     return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
@@ -30,6 +31,7 @@ module.exports.saveDraft = async (req, res, next) => {
       req.params.token,
       req.params.documentCode,
       req.body.form_data,
+      req,
     );
     return res.success(constants.MESSAGE.CANDIDATE_FORM.SAVED, data);
   } catch (error) {
@@ -44,6 +46,7 @@ module.exports.submit = async (req, res, next) => {
       req.params.token,
       req.params.documentCode,
       req.body.form_data,
+      req,
     );
     return res.success(constants.MESSAGE.CANDIDATE_FORM.SUBMITTED, data);
   } catch (error) {
@@ -64,6 +67,7 @@ module.exports.submitPdf = async (req, res, next) => {
       req.params.documentCode,
       formData,
       req.file,
+      req,
     );
     return res.success(constants.MESSAGE.CANDIDATE_FORM.SUBMITTED, data);
   } catch (error) {

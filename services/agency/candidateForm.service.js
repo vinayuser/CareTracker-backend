@@ -133,14 +133,14 @@ const maybeCompleteStageAccess = async (accessId) => {
   }
 };
 
-const formatSubmission = (doc) => {
+const formatSubmission = (doc, req) => {
   const client = functions.toClientDoc(doc);
   if (!client) return null;
   client.document_code = client.documentCode;
   client.document_name = client.documentName;
   client.form_data = client.formData || {};
   client.filled_pdf_url = client.filledPdfPath
-    ? `${functions.getApiBaseUrl()}/uploads/${String(client.filledPdfPath).replace(/^\/+/, '')}`
+    ? `${functions.getApiBaseUrl(req)}/uploads/${String(client.filledPdfPath).replace(/^\/+/, '')}`
     : null;
   client.submitted_at = client.submittedAt
     ? new Date(client.submittedAt).toISOString()
@@ -153,23 +153,23 @@ const getCatalogDocument = async (documentCode) => Model.DocumentModel.findOne({
   isActive: true,
 });
 
-const getTemplateUrlForCode = async (documentCode) => {
+const getTemplateUrlForCode = async (documentCode, req) => {
   const catalogDoc = await getCatalogDocument(documentCode);
   if (!catalogDoc?.path) return null;
-  return functions.buildDocumentTemplateUrl(catalogDoc.path);
+  return functions.buildDocumentTemplateUrl(catalogDoc.path, req);
 };
 
-const formatAccess = (doc) => {
+const formatAccess = (doc, req) => {
   if (!doc) return null;
   const client = functions.toClientDoc(doc);
-  client.form_url = functions.buildCandidateFormUrl(doc.token);
+  client.form_url = functions.buildCandidateFormUrl(doc.token, req);
   client.email_sent_at = doc.emailSentAt ? new Date(doc.emailSentAt).toISOString() : null;
   client.expires_at = doc.expiresAt ? new Date(doc.expiresAt).toISOString() : null;
   client.document_codes = doc.documentCodes || [];
   return client;
 };
 
-const buildFormProgress = (documents, submissions, access) => {
+const buildFormProgress = (documents, submissions, access, req) => {
   const submissionMap = Object.fromEntries(submissions.map((s) => [s.documentCode, s]));
   const docRows = documents.map((doc) => {
     const sub = submissionMap[doc.code];
@@ -184,7 +184,7 @@ const buildFormProgress = (documents, submissions, access) => {
   const required = docRows.filter((d) => d.is_required);
   const submitted = docRows.filter((d) => d.status === 'Submitted');
   return {
-    form_url: access ? functions.buildCandidateFormUrl(access.token) : null,
+    form_url: access ? functions.buildCandidateFormUrl(access.token, req) : null,
     access_status: access?.status || null,
     email_sent_at: access?.emailSentAt ? new Date(access.emailSentAt).toISOString() : null,
     expires_at: access?.expiresAt ? new Date(access.expiresAt).toISOString() : null,
@@ -251,7 +251,7 @@ const issueStageAccess = async (req, applicationId, options = {}) => {
   const candidate = application.candidateId;
   const job = application.jobPostId;
   const agency = await Model.AgencyModel.findById(application.agencyId).select('name');
-  const formUrl = functions.buildCandidateFormUrl(token);
+  const formUrl = functions.buildCandidateFormUrl(token, req);
 
   let emailResult = { sent: false, devMode: true };
   if (candidate?.email) {
@@ -276,7 +276,7 @@ const issueStageAccess = async (req, applicationId, options = {}) => {
     skipped: false,
     form_url: formUrl,
     document_codes: documentCodes,
-    access: formatAccess(access),
+    access: formatAccess(access, req),
     email: emailResult,
   };
 };
@@ -327,7 +327,7 @@ const enrichApplicationsWithFormProgress = async (applications, stageId) => {
     const issuedDocs = access ? resolveIssuedDocuments(stage, access) : documents;
     return {
       ...app,
-      form_progress: buildFormProgress(issuedDocs, subs, access),
+      form_progress: buildFormProgress(issuedDocs, subs, access, null),
     };
   });
 };
@@ -344,7 +344,7 @@ const resolveTokenAccess = async (token) => {
   return access;
 };
 
-const getPortalByToken = async (token) => {
+const getPortalByToken = async (token, req) => {
   const access = await resolveTokenAccess(token);
   access.lastOpenedAt = new Date();
   await access.save();
@@ -379,11 +379,11 @@ const getPortalByToken = async (token) => {
     } : null,
     stage: stage ? { id: String(stage._id), name: stage.name } : null,
     agency_name: agency?.name || '',
-    form_progress: buildFormProgress(documents, submissions, access),
+    form_progress: buildFormProgress(documents, submissions, access, req),
   };
 };
 
-const getDocumentFormByToken = async (token, documentCode) => {
+const getDocumentFormByToken = async (token, documentCode, req) => {
   const access = await resolveTokenAccess(token);
   const stage = await Model.AgencyStageModel.findById(access.stageId);
   const documents = resolveIssuedDocuments(stage, access);
@@ -410,7 +410,7 @@ const getDocumentFormByToken = async (token, documentCode) => {
   }
 
   const schema = getFormSchema(documentCode);
-  const templateUrl = await getTemplateUrlForCode(documentCode);
+  const templateUrl = await getTemplateUrlForCode(documentCode, req);
 
   return {
     document_code: documentCode,
@@ -425,13 +425,13 @@ const getDocumentFormByToken = async (token, documentCode) => {
     url: templateUrl,
     form_data: submission.formData || buildEmptyFormData(documentCode),
     filled_pdf_url: submission.filledPdfPath
-      ? `${functions.getApiBaseUrl()}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
+      ? `${functions.getApiBaseUrl(req)}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
       : null,
     read_only: submission.status === 'Submitted',
   };
 };
 
-const saveDocumentDraft = async (token, documentCode, formData) => {
+const saveDocumentDraft = async (token, documentCode, formData, req) => {
   const access = await resolveTokenAccess(token);
   assertDocumentIssued(access, documentCode);
   const submission = await Model.CandidateFormSubmissionModel.findOne({
@@ -448,10 +448,10 @@ const saveDocumentDraft = async (token, documentCode, formData) => {
   submission.status = 'Draft';
   submission.stageAccessId = access._id;
   await submission.save();
-  return formatSubmission(submission);
+  return formatSubmission(submission, req);
 };
 
-const submitPdfDocument = async (token, documentCode, formData, file) => {
+const submitPdfDocument = async (token, documentCode, formData, file, req) => {
   const access = await resolveTokenAccess(token);
   assertDocumentIssued(access, documentCode);
   if (!hasPdfForm(documentCode)) {
@@ -478,7 +478,7 @@ const submitPdfDocument = async (token, documentCode, formData, file) => {
   await submission.save();
 
   await maybeCompleteStageAccess(access._id);
-  return formatSubmission(submission);
+  return formatSubmission(submission, req);
 };
 
 const validateSubmissionPayload = (documentCode, formData) => {
@@ -496,7 +496,7 @@ const validateSubmissionPayload = (documentCode, formData) => {
   if (!formData?.signature) throw new Error(constants.MESSAGE.CANDIDATE_FORM.SIGNATURE_REQUIRED);
 };
 
-const submitDocument = async (token, documentCode, formData) => {
+const submitDocument = async (token, documentCode, formData, req) => {
   if (hasPdfForm(documentCode)) {
     throw new Error(constants.MESSAGE.CANDIDATE_FORM.USE_PDF_SUBMIT);
   }
@@ -529,7 +529,7 @@ const submitDocument = async (token, documentCode, formData) => {
   await submission.save();
 
   await maybeCompleteStageAccess(access._id);
-  return formatSubmission(submission);
+  return formatSubmission(submission, req);
 };
 
 const schemaUsesAuthDate = (documentCode) => getFormSchema(documentCode).type === 'employment_application';
@@ -557,9 +557,9 @@ const getSubmissionsForAgency = async (req, applicationId, stageId = null) => {
     application_id: String(applicationId),
     stage: stage ? { id: String(stage._id), name: stage.name } : null,
     available_documents: availableDocuments,
-    form_progress: buildFormProgress(documents, submissions, access),
-    submissions: submissions.map(formatSubmission),
-    access: formatAccess(access),
+    form_progress: buildFormProgress(documents, submissions, access, req),
+    submissions: submissions.map((s) => formatSubmission(s, req)),
+    access: formatAccess(access, req),
   };
 };
 
@@ -582,11 +582,11 @@ const getSubmissionForPrint = async (req, applicationId, submissionId) => {
   const schema = getFormSchema(submission.documentCode);
 
   return {
-    submission: formatSubmission(submission),
+    submission: formatSubmission(submission, req),
     form_type: schema.type,
     document_name: submission.documentName,
     pdf_url: submission.filledPdfPath
-      ? `${functions.getApiBaseUrl()}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
+      ? `${functions.getApiBaseUrl(req)}/uploads/${String(submission.filledPdfPath).replace(/^\/+/, '')}`
       : null,
     candidate: candidate ? {
       first_name: candidate.firstName,
@@ -664,7 +664,7 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
   if (!access) {
     const issued = await issueStageAccess(req, applicationId, { documentCodes: [documentCode] });
     return {
-      submission: formatSubmission(submission),
+      submission: formatSubmission(submission, req),
       form_url: issued.form_url,
       email: issued.email,
     };
@@ -685,7 +685,7 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
   const job = application.jobPostId;
   const stage = await Model.AgencyStageModel.findById(stageId);
   const agency = await Model.AgencyModel.findById(agencyId).select('name');
-  const formUrl = functions.buildCandidateFormUrl(access.token);
+  const formUrl = functions.buildCandidateFormUrl(access.token, req);
 
   let emailResult = { sent: false, devMode: true };
   if (candidate?.email) {
@@ -708,9 +708,9 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
   const documents = resolveIssuedDocuments(stage, access);
 
   return {
-    submission: formatSubmission(submission),
+    submission: formatSubmission(submission, req),
     form_url: formUrl,
-    form_progress: buildFormProgress(documents, submissions, access),
+    form_progress: buildFormProgress(documents, submissions, access, req),
     email: emailResult,
   };
 };

@@ -23,6 +23,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         NODE_PORT: 5000,
+        FRONTEND_URL: 'https://caretraker.com',
+        API_BASE_URL: 'https://caretraker.com',
       },
       error_file: './logs/pm2-error.log',
       out_file: './logs/pm2-out.log',

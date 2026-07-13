@@ -2,14 +2,14 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 
-const formatInvitation = (invitation) => {
+const formatInvitation = (invitation, req) => {
   const client = functions.toClientDoc(invitation);
   if (client) {
     client.subscriptionPlanId = String(invitation.subscriptionPlanId);
     client.invitedOn = invitation.invitedOn?.toISOString?.() || invitation.invitedOn;
     client.expiresAt = invitation.expiresAt?.toISOString?.() || invitation.expiresAt;
     if (client.token) {
-      client.inviteUrl = functions.buildInviteUrl(client.token);
+      client.inviteUrl = functions.buildInviteUrl(client.token, req);
     }
   }
   return client;
