@@ -4,6 +4,16 @@ const functions = require('../../common/functions');
 const assessmentConstants = require('../../common/assessmentConstants');
 const { DEFAULT_SERVICES } = require('../../common/carePlanConstants');
 const { create: createClient } = require('./client.service');
+const {
+  sendAssessmentCreatedEmail,
+  sendQuoteGeneratedEmail,
+  sendQuoteAcceptedEmail,
+} = require('../common/mail.service');
+const {
+  getAgencyContext,
+  uniqueEmails,
+  agencyPortalUrl,
+} = require('../common/notifyHelpers');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -17,6 +27,22 @@ const getAgencyId = (req) => {
 const getAccountId = (req) => {
   const account = getAgencyAccount(req);
   return account?._id || account?.id;
+};
+
+const getCreatorEmail = (req) => {
+  const account = getAgencyAccount(req);
+  return String(account?.email || '').trim().toLowerCase();
+};
+
+const notifyMany = async (emails, sendFn) => {
+  const list = uniqueEmails(emails);
+  await Promise.all(list.map(async (to) => {
+    try {
+      await sendFn(to);
+    } catch (err) {
+      console.error('[assessment] email failed', to, err.message);
+    }
+  }));
 };
 
 const splitClientName = (fullName = '') => {
@@ -181,6 +207,7 @@ const getAll = async (req, query = {}) => {
   const agencyId = getAgencyId(req);
   const filter = { agencyId };
   if (query.status && query.status !== 'All') filter.status = query.status;
+  if (query.client_id) filter.clientId = query.client_id;
 
   if (query.search) {
     const regex = new RegExp(String(query.search).trim(), 'i');
@@ -220,6 +247,36 @@ const create = async (req, payload) => {
     ...summary,
     createdByAccountId: getAccountId(req),
   });
+
+  try {
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+    const assessorEmail = getCreatorEmail(req);
+    const clientEmail = summary.clientEmail || payload.formData?.contactInfo?.email || '';
+    const portalUrl = agencyPortalUrl(req, '/agency/assessments');
+    const base = {
+      agencyName,
+      clientName: summary.clientName || doc.clientName,
+      assessmentCode: doc.assessmentCode,
+      assessorName: doc.assessorName,
+      assessmentDate: doc.assessmentDate,
+      portalUrl,
+    };
+    await notifyMany(
+      [...ownerEmails, assessorEmail, clientEmail],
+      (to) => sendAssessmentCreatedEmail({
+        to,
+        recipientName: to === clientEmail
+          ? summary.clientName
+          : to === assessorEmail
+            ? doc.assessorName
+            : ownerName,
+        ...base,
+      }),
+    );
+  } catch (err) {
+    console.error('[assessment] create notify failed', err.message);
+  }
+
   return formatAssessment(doc);
 };
 
@@ -303,6 +360,32 @@ const generateQuote = async (req, id, pricing) => {
   assessment.status = 'Quoted';
   await assessment.save();
 
+  try {
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+    const clientEmail = assessment.clientEmail || assessment.formData?.contactInfo?.email || '';
+    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${plan._id}`);
+    const base = {
+      agencyName,
+      clientName: assessment.clientName,
+      assessmentCode: assessment.assessmentCode,
+      planCode: plan.planCode,
+      weeklyHours: plan.weeklyHours,
+      hourlyRate: plan.hourlyRate,
+      quotedMonthlyPrice: plan.quotedMonthlyPrice,
+      portalUrl,
+    };
+    await notifyMany(
+      [...ownerEmails, clientEmail],
+      (to) => sendQuoteGeneratedEmail({
+        to,
+        recipientName: to === clientEmail ? assessment.clientName : ownerName,
+        ...base,
+      }),
+    );
+  } catch (err) {
+    console.error('[assessment] quote notify failed', err.message);
+  }
+
   return {
     assessment: formatAssessment(assessment),
     carePlan: {
@@ -346,6 +429,30 @@ const acceptQuote = async (req, id) => {
   assessment.clientId = client.id;
   assessment.status = 'Accepted';
   await assessment.save();
+
+  try {
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+    const clientEmail = client.email || assessment.clientEmail || assessment.formData?.contactInfo?.email || '';
+    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${plan._id}`);
+    const base = {
+      agencyName,
+      clientName: assessment.clientName || `${client.firstName || ''} ${client.lastName || ''}`.trim(),
+      assessmentCode: assessment.assessmentCode,
+      planCode: plan.planCode,
+      quotedMonthlyPrice: plan.quotedMonthlyPrice,
+      portalUrl,
+    };
+    await notifyMany(
+      [...ownerEmails, clientEmail],
+      (to) => sendQuoteAcceptedEmail({
+        to,
+        recipientName: to === clientEmail ? base.clientName : ownerName,
+        ...base,
+      }),
+    );
+  } catch (err) {
+    console.error('[assessment] accept notify failed', err.message);
+  }
 
   return {
     assessment: formatAssessment(assessment),

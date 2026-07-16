@@ -1,6 +1,7 @@
 const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
+const { sendAgencyInvitationEmail } = require('../common/mail.service');
 
 const formatInvitation = (invitation, req) => {
   const client = functions.toClientDoc(invitation);
@@ -25,12 +26,30 @@ const getStats = async () => {
   };
 };
 
-const getAll = async () => {
+const getAll = async (req) => {
   const invitations = await Model.InvitationModel.find().sort({ createdAt: -1 });
-  return invitations.map(formatInvitation);
+  return invitations.map((inv) => formatInvitation(inv, req));
 };
 
-const send = async (payload) => {
+const deliverInvitationEmail = async (invitation, req) => {
+  const inviteUrl = functions.buildInviteUrl(invitation.token, req);
+  try {
+    await sendAgencyInvitationEmail({
+      to: invitation.email,
+      agencyName: invitation.agencyName,
+      planName: invitation.planName,
+      planPrice: invitation.planPrice,
+      message: invitation.message,
+      inviteUrl,
+      expiresAt: invitation.expiresAt,
+    });
+  } catch (err) {
+    console.error('[invitation] email failed', err.message);
+  }
+  return inviteUrl;
+};
+
+const send = async (req, payload) => {
   const plan = await Model.SubscriptionPlanModel.findById(payload.subscriptionPlanId);
   if (!plan) throw new Error('Subscription Plan Not Found');
 
@@ -50,11 +69,13 @@ const send = async (payload) => {
     expiresAt,
   });
 
-  const formatted = formatInvitation(invitation);
+  const inviteUrl = await deliverInvitationEmail(invitation, req);
+  const formatted = formatInvitation(invitation, req);
+  formatted.inviteUrl = inviteUrl;
   return formatted;
 };
 
-const resend = async (id) => {
+const resend = async (req, id) => {
   const invitation = await Model.InvitationModel.findById(id);
   if (!invitation) throw new Error(constants.MESSAGE.INVITATION.NOT_FOUND);
 
@@ -66,7 +87,10 @@ const resend = async (id) => {
   invitation.invitedOn = new Date();
   await invitation.save();
 
-  return formatInvitation(invitation);
+  const inviteUrl = await deliverInvitationEmail(invitation, req);
+  const formatted = formatInvitation(invitation, req);
+  formatted.inviteUrl = inviteUrl;
+  return formatted;
 };
 
 const validateToken = async (token) => {

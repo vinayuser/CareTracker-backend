@@ -13,7 +13,7 @@ module.exports.getStats = async (req, res, next) => {
 
 module.exports.getAll = async (req, res, next) => {
   try {
-    const data = await InvitationService.getAll();
+    const data = await InvitationService.getAll(req);
     return res.success(constants.MESSAGE.LIST, data);
   } catch (error) {
     next(error);
@@ -23,7 +23,7 @@ module.exports.getAll = async (req, res, next) => {
 module.exports.send = async (req, res, next) => {
   try {
     await Validation.Invitation.create.validateAsync(req.body);
-    const data = await InvitationService.send(req.body);
+    const data = await InvitationService.send(req, req.body);
     return res.success(constants.MESSAGE.INVITATION.SENT, data);
   } catch (error) {
     next(error);
@@ -32,7 +32,7 @@ module.exports.send = async (req, res, next) => {
 
 module.exports.resend = async (req, res, next) => {
   try {
-    const data = await InvitationService.resend(req.params.id);
+    const data = await InvitationService.resend(req, req.params.id);
     return res.success(constants.MESSAGE.INVITATION.RESENT, data);
   } catch (error) {
     next(error);

@@ -28,14 +28,14 @@ const emptySkillRatings = () =>
     return acc;
   }, {});
 
-const buildDefaultFormData = ({ candidate, job, stageName }) => ({
+const buildDefaultFormData = ({ candidate, job, stageName, recruiter = '' }) => ({
   candidateName: candidate
     ? `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim()
     : '',
   positionApplied: job?.jobTitle || 'Caregiver',
   interviewDate: '',
   experience: candidate?.experience != null ? String(candidate.experience) : '',
-  recruiter: '',
+  recruiter: recruiter || '',
   location: candidate?.location || '',
   currentCtc: candidate?.currentCtc != null ? String(candidate.currentCtc) : '',
   expectedCtc: candidate?.expectedCtc != null ? String(candidate.expectedCtc) : '',
@@ -53,6 +53,20 @@ const buildDefaultFormData = ({ candidate, job, stageName }) => ({
   expectedJoining: '',
   finalComments: '',
 });
+
+const formatCandidateSeed = (candidate) => {
+  if (!candidate) return null;
+  return {
+    id: String(candidate._id),
+    first_name: candidate.firstName,
+    last_name: candidate.lastName,
+    email: candidate.email,
+    experience: candidate.experience != null ? String(candidate.experience) : '',
+    location: candidate.location || '',
+    current_ctc: candidate.currentCtc != null ? String(candidate.currentCtc) : '',
+    expected_ctc: candidate.expectedCtc != null ? String(candidate.expectedCtc) : '',
+  };
+};
 
 const formatFeedback = (doc) => {
   if (!doc) return null;
@@ -132,20 +146,34 @@ const getAllForApplication = async (req, applicationId) => {
   const currentStageId = application.agencyStageId
     ? String(application.agencyStageId._id || application.agencyStageId)
     : null;
+  const account = getAgencyAccount(req);
+  const recruiterName = account?.fullName || account?.email || '';
+  const candidateSeed = formatCandidateSeed(candidate);
 
   const stageForms = stages.map((stage, index) => {
     const stageId = String(stage._id);
     const fb = byStage[stageId] || null;
     const stageName = stage.name || '';
+    const defaults = buildDefaultFormData({ candidate, job, stageName, recruiter: recruiterName });
+    const saved = fb ? (fb.formData || {}) : {};
     return {
       round: index + 1,
       stage: { id: stageId, name: stageName },
       is_current: currentStageId === stageId,
       status: fb?.status || null,
       feedback: formatFeedback(fb),
-      form_data: fb
-        ? (fb.formData || {})
-        : buildDefaultFormData({ candidate, job, stageName }),
+      form_data: {
+        ...defaults,
+        ...saved,
+        // Locked auto-fill always wins
+        candidateName: defaults.candidateName || saved.candidateName || '',
+        positionApplied: defaults.positionApplied || saved.positionApplied || '',
+        experience: defaults.experience || saved.experience || '',
+        location: defaults.location || saved.location || '',
+        currentCtc: defaults.currentCtc || saved.currentCtc || '',
+        expectedCtc: defaults.expectedCtc || saved.expectedCtc || '',
+        recruiter: recruiterName || saved.recruiter || '',
+      },
       submitted_at: fb?.submittedAt || null,
       updated_at: fb?.updatedAt || null,
     };
@@ -158,16 +186,10 @@ const getAllForApplication = async (req, applicationId) => {
       status: application.status,
       current_stage_id: currentStageId,
     },
-    candidate: candidate
-      ? {
-          id: String(candidate._id),
-          first_name: candidate.firstName,
-          last_name: candidate.lastName,
-          email: candidate.email,
-        }
-      : null,
+    candidate: candidateSeed,
     job: { id: String(job._id), job_title: job.jobTitle },
     agency_name: agency?.name || '',
+    recruiter: recruiterName,
     stages: stageForms,
     pipeline_rounds: stageForms.map((s) => ({
       round: s.round,
@@ -219,6 +241,8 @@ const getForApplicationStage = async (req, applicationId, stageId) => {
   const stageName = stage.name || application.agencyStageId?.name || '';
   const pipelineRounds = await buildPipelineRounds(application._id, job);
   const agency = await Model.AgencyModel.findById(agencyId).select('name');
+  const account = getAgencyAccount(req);
+  const recruiterName = account?.fullName || account?.email || '';
 
   const base = {
     options: getOptions(),
@@ -228,30 +252,36 @@ const getForApplicationStage = async (req, applicationId, stageId) => {
       status: application.status,
     },
     stage: { id: String(resolvedStageId), name: stageName },
-    candidate: candidate
-      ? {
-          id: String(candidate._id),
-          first_name: candidate.firstName,
-          last_name: candidate.lastName,
-          email: candidate.email,
-        }
-      : null,
+    candidate: formatCandidateSeed(candidate),
     job: { id: String(job._id), job_title: job.jobTitle },
     agency_name: agency?.name || '',
+    recruiter: recruiterName,
   };
 
   if (!feedback) {
     return {
       ...base,
       feedback: null,
-      prefill: buildDefaultFormData({ candidate, job, stageName }),
+      prefill: buildDefaultFormData({ candidate, job, stageName, recruiter: recruiterName }),
     };
   }
 
+  const saved = feedback.formData || {};
+  const defaults = buildDefaultFormData({ candidate, job, stageName, recruiter: recruiterName });
   return {
     ...base,
     feedback: formatFeedback(feedback),
-    prefill: null,
+    prefill: {
+      ...defaults,
+      ...saved,
+      candidateName: defaults.candidateName || saved.candidateName || '',
+      positionApplied: defaults.positionApplied || saved.positionApplied || '',
+      experience: defaults.experience || saved.experience || '',
+      location: defaults.location || saved.location || '',
+      currentCtc: defaults.currentCtc || saved.currentCtc || '',
+      expectedCtc: defaults.expectedCtc || saved.expectedCtc || '',
+      recruiter: recruiterName || saved.recruiter || '',
+    },
   };
 };
 
@@ -267,9 +297,12 @@ const saveFeedback = async (req, applicationId, stageId, payload) => {
   if (!stage) throw new Error(constants.MESSAGE.CANDIDATE.INVALID_STAGE);
 
   const status = payload.status === 'Submitted' ? 'Submitted' : 'Draft';
+  const account = getAgencyAccount(req);
+  const recruiterName = account?.fullName || account?.email || '';
   const formData = {
     ...(payload.form_data || {}),
     stageName: stage.name,
+    recruiter: recruiterName || payload.form_data?.recruiter || '',
   };
 
   const feedback = await Model.InterviewFeedbackModel.findOneAndUpdate(

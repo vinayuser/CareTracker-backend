@@ -21,7 +21,7 @@ module.exports.createAccount = async (req, res, next) => {
 
 module.exports.submit = async (req, res, next) => {
   try {
-    const data = await RegistrationService.submitRegistration(req.body);
+    const data = await RegistrationService.submitRegistration(req, req.body);
     return res.success(constants.MESSAGE.REGISTRATION.COMPLETED, data);
   } catch (error) {
     next(error);

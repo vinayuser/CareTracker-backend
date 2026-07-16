@@ -57,7 +57,10 @@ const ctaButton = (href, label) => `
   </p>`.trim();
 
 const sendMail = async ({ to, subject, html, text }) => {
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@caretraker.com';
+  const from = process.env.MAIL_FROM
+    || process.env.MAIL_FROM_ADDRESS
+    || process.env.SMTP_USER
+    || 'noreply@caretraker.com';
 
   if (!isConfigured()) {
     console.log('\n--- [mail:dev] ---');
@@ -181,6 +184,58 @@ const sendCandidateStageFormsEmail = async ({
       <a href="${escapeHtml(formUrl)}" style="color:${PRIMARY};word-break:break-all;">${escapeHtml(formUrl)}</a>
     </p>
     <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;">This link is unique to you. Please do not share it.</p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Congrats when candidate completes a round and advances to the next pipeline stage */
+const sendCandidateRoundCompletedEmail = async ({
+  to,
+  candidateName,
+  jobTitle,
+  agencyName,
+  completedStageName,
+  nextStageName,
+}) => {
+  const agency = agencyName || 'Your agency';
+  const role = jobTitle || 'the position';
+  const completed = completedStageName || 'this round';
+  const next = nextStageName || 'the next stage';
+  const subject = `Congratulations — you completed ${completed}`;
+
+  const text = [
+    `Hello ${candidateName || 'there'},`,
+    '',
+    `Congratulations! You have successfully completed the "${completed}" round for ${role} with ${agency}.`,
+    '',
+    `You have been moved to the next stage: "${next}".`,
+    'We will follow up if any forms or next steps are required.',
+    '',
+    'Thank you,',
+    agency,
+  ].join('\n');
+
+  const html = wrapEmail('Round completed — congratulations!', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(candidateName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      Congratulations! You have successfully completed the
+      <strong>${escapeHtml(completed)}</strong> round for
+      <strong>${escapeHtml(role)}</strong> with
+      <strong>${escapeHtml(agency)}</strong>.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Completed</span><br /><strong>${escapeHtml(completed)}</strong></p>
+        <p style="margin:0;"><span style="color:#64748b;">Next stage</span><br /><strong>${escapeHtml(next)}</strong></p>
+      </td></tr>
+    </table>
+    <p style="margin:12px 0 0;color:#64748b;font-size:14px;">
+      We will email you if forms or further steps are needed for the next round.
+    </p>
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      Thank you,<br /><strong style="color:#0f172a;">${escapeHtml(agency)}</strong>
+    </p>
   `);
 
   return sendMail({ to, subject, html, text });
@@ -382,13 +437,394 @@ const sendEvvEnrollmentAssignedEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+const money = (amount) => {
+  const n = Number(amount);
+  if (Number.isNaN(n)) return String(amount ?? '');
+  return `$${n.toFixed(2)}`;
+};
+
+/** Admin invites an agency owner to register */
+const sendAgencyInvitationEmail = async ({
+  to,
+  agencyName,
+  planName,
+  planPrice,
+  message,
+  inviteUrl,
+  expiresAt,
+}) => {
+  const subject = `You're invited to join CareTraker${agencyName ? ` — ${agencyName}` : ''}`;
+  const expiry = expiresAt
+    ? new Date(expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+
+  const text = [
+    `Hello,`,
+    '',
+    `You have been invited to register ${agencyName || 'your agency'} on CareTraker.`,
+    planName ? `Subscription plan: ${planName}${planPrice != null ? ` (${money(planPrice)})` : ''}` : '',
+    message ? `Message: ${message}` : '',
+    '',
+    `Complete registration: ${inviteUrl}`,
+    expiry ? `This invitation expires on ${expiry}.` : '',
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail("You're invited to CareTraker", `
+    <p style="margin:0 0 12px;">Hello,</p>
+    <p style="margin:0 0 12px;">
+      You have been invited to register
+      <strong>${escapeHtml(agencyName || 'your agency')}</strong> on CareTraker.
+    </p>
+    ${planName ? `<p style="margin:0 0 12px;font-size:14px;color:#64748b;">Plan: <strong style="color:#0f172a;">${escapeHtml(planName)}</strong>${planPrice != null ? ` · ${escapeHtml(money(planPrice))}` : ''}</p>` : ''}
+    ${message ? `<p style="margin:0 0 12px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;color:#334155;">${escapeHtml(message)}</p>` : ''}
+    ${ctaButton(inviteUrl, 'Complete Registration')}
+    ${expiry ? `<p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">Invitation expires on ${escapeHtml(expiry)}.</p>` : ''}
+    <p style="margin:20px 0 0;font-size:13px;color:#64748b;">
+      Or copy this link:<br />
+      <a href="${escapeHtml(inviteUrl)}" style="color:${PRIMARY};word-break:break-all;">${escapeHtml(inviteUrl)}</a>
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Welcome email to agency owner after successful registration / payment */
+const sendAgencyRegistrationWelcomeEmail = async ({
+  to,
+  ownerName,
+  agencyName,
+  planName,
+  planPrice,
+  loginUrl,
+}) => {
+  const portalUrl = loginUrl || `${getFrontendUrl()}/login`;
+  const subject = `Welcome to CareTraker — ${agencyName || 'your agency'} is ready`;
+
+  const text = [
+    `Hello ${ownerName || 'there'},`,
+    '',
+    `Congratulations! ${agencyName || 'Your agency'} has successfully completed registration on CareTraker.`,
+    planName ? `Active plan: ${planName}${planPrice != null ? ` (${money(planPrice)})` : ''}` : '',
+    '',
+    `Sign in: ${portalUrl}`,
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('Welcome to CareTraker', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(ownerName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      Congratulations! <strong>${escapeHtml(agencyName || 'Your agency')}</strong> has successfully
+      completed registration and is ready to use CareTraker.
+    </p>
+    ${planName ? `<p style="margin:0 0 12px;font-size:14px;color:#64748b;">Active plan: <strong style="color:#0f172a;">${escapeHtml(planName)}</strong>${planPrice != null ? ` · ${escapeHtml(money(planPrice))}` : ''}</p>` : ''}
+    ${ctaButton(portalUrl, 'Sign in to CareTraker')}
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      Thank you,<br /><strong style="color:#0f172a;">CareTraker</strong>
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Notify platform admin that an agency finished onboarding */
+const sendAdminAgencyOnboardedEmail = async ({
+  to,
+  agencyName,
+  ownerName,
+  ownerEmail,
+  planName,
+  planPrice,
+  transactionId,
+}) => {
+  const subject = `Agency onboarded — ${agencyName || 'New agency'}`;
+
+  const text = [
+    'A new agency has completed CareTraker onboarding.',
+    '',
+    `Agency: ${agencyName || '—'}`,
+    `Owner: ${ownerName || '—'} (${ownerEmail || '—'})`,
+    planName ? `Plan: ${planName}${planPrice != null ? ` · ${money(planPrice)}` : ''}` : '',
+    transactionId ? `Transaction: ${transactionId}` : '',
+    '',
+    'CareTraker Admin',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('Agency onboarding complete', `
+    <p style="margin:0 0 12px;">A new agency has completed CareTraker registration and payment.</p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Agency</span><br /><strong>${escapeHtml(agencyName || '—')}</strong></p>
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Owner</span><br /><strong>${escapeHtml(ownerName || '—')}</strong> · ${escapeHtml(ownerEmail || '—')}</p>
+        ${planName ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Plan</span><br /><strong>${escapeHtml(planName)}</strong>${planPrice != null ? ` · ${escapeHtml(money(planPrice))}` : ''}</p>` : ''}
+        ${transactionId ? `<p style="margin:0;"><span style="color:#64748b;">Transaction</span><br /><strong>${escapeHtml(transactionId)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Payment invoice / receipt to agency owner */
+const sendAgencyPaymentInvoiceEmail = async ({
+  to,
+  ownerName,
+  agencyName,
+  planName,
+  amount,
+  billingCycle,
+  transactionId,
+  paidAt,
+}) => {
+  const subject = `Invoice — CareTraker ${planName || 'subscription'}`;
+  const paidDate = paidAt
+    ? new Date(paidAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const text = [
+    `Hello ${ownerName || 'there'},`,
+    '',
+    `Payment received for ${agencyName || 'your agency'} on CareTraker.`,
+    '',
+    `Plan: ${planName || '—'}`,
+    `Amount: ${money(amount)}${billingCycle ? ` / ${billingCycle}` : ''}`,
+    `Date: ${paidDate}`,
+    transactionId ? `Transaction ID: ${transactionId}` : '',
+    '',
+    'Thank you,',
+    'CareTraker Billing',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('Payment invoice', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(ownerName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      We received payment for <strong>${escapeHtml(agencyName || 'your agency')}</strong>.
+      Here is your invoice summary.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Plan</span><br /><strong>${escapeHtml(planName || '—')}</strong></p>
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Amount</span><br /><strong>${escapeHtml(money(amount))}${billingCycle ? ` / ${escapeHtml(billingCycle)}` : ''}</strong></p>
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Paid on</span><br /><strong>${escapeHtml(paidDate)}</strong></p>
+        ${transactionId ? `<p style="margin:0;"><span style="color:#64748b;">Transaction ID</span><br /><strong style="font-family:Consolas,Monaco,monospace;">${escapeHtml(transactionId)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;color:#64748b;font-size:14px;">Thank you for choosing CareTraker.</p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Assessment created — notify recipients (owner / assessor / client) */
+const sendAssessmentCreatedEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  clientName,
+  assessmentCode,
+  assessorName,
+  assessmentDate,
+  portalUrl,
+}) => {
+  const subject = `New client assessment${clientName ? ` — ${clientName}` : ''}${assessmentCode ? ` (${assessmentCode})` : ''}`;
+
+  const text = [
+    `Hello ${recipientName || 'there'},`,
+    '',
+    `${agencyName || 'Your agency'} created a new client assessment.`,
+    clientName ? `Client: ${clientName}` : '',
+    assessmentCode ? `Assessment: ${assessmentCode}` : '',
+    assessorName ? `Assessor: ${assessorName}` : '',
+    assessmentDate ? `Date: ${assessmentDate}` : '',
+    portalUrl ? `View in CareTraker: ${portalUrl}` : '',
+    '',
+    'Thank you,',
+    agencyName || 'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('New client assessment', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(recipientName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      <strong>${escapeHtml(agencyName || 'Your agency')}</strong> created a new client assessment.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${clientName ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Client</span><br /><strong>${escapeHtml(clientName)}</strong></p>` : ''}
+        ${assessmentCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Assessment code</span><br /><strong>${escapeHtml(assessmentCode)}</strong></p>` : ''}
+        ${assessorName ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Assessor</span><br /><strong>${escapeHtml(assessorName)}</strong></p>` : ''}
+        ${assessmentDate ? `<p style="margin:0;"><span style="color:#64748b;">Date</span><br /><strong>${escapeHtml(assessmentDate)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${portalUrl ? ctaButton(portalUrl, 'Open CareTraker') : ''}
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Quote generated for an assessment */
+const sendQuoteGeneratedEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  clientName,
+  assessmentCode,
+  planCode,
+  weeklyHours,
+  hourlyRate,
+  quotedMonthlyPrice,
+  portalUrl,
+}) => {
+  const subject = `Care quote ready${clientName ? ` — ${clientName}` : ''}`;
+
+  const text = [
+    `Hello ${recipientName || 'there'},`,
+    '',
+    `${agencyName || 'Your agency'} generated a care quote.`,
+    clientName ? `Client: ${clientName}` : '',
+    assessmentCode ? `Assessment: ${assessmentCode}` : '',
+    planCode ? `Care plan: ${planCode}` : '',
+    weeklyHours != null ? `Weekly hours: ${weeklyHours}` : '',
+    hourlyRate != null ? `Hourly rate: ${money(hourlyRate)}` : '',
+    quotedMonthlyPrice != null ? `Quoted monthly: ${money(quotedMonthlyPrice)}` : '',
+    portalUrl ? `View: ${portalUrl}` : '',
+    '',
+    'Thank you,',
+    agencyName || 'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('Care quote generated', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(recipientName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      <strong>${escapeHtml(agencyName || 'Your agency')}</strong> has generated a care quote
+      ${clientName ? ` for <strong>${escapeHtml(clientName)}</strong>` : ''}.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${assessmentCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Assessment</span><br /><strong>${escapeHtml(assessmentCode)}</strong></p>` : ''}
+        ${planCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Care plan</span><br /><strong>${escapeHtml(planCode)}</strong></p>` : ''}
+        ${weeklyHours != null ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Weekly hours</span><br /><strong>${escapeHtml(String(weeklyHours))}</strong></p>` : ''}
+        ${hourlyRate != null ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Hourly rate</span><br /><strong>${escapeHtml(money(hourlyRate))}</strong></p>` : ''}
+        ${quotedMonthlyPrice != null ? `<p style="margin:0;"><span style="color:#64748b;">Quoted monthly</span><br /><strong>${escapeHtml(money(quotedMonthlyPrice))}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${portalUrl ? ctaButton(portalUrl, 'Review quote') : ''}
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Quote accepted / client onboarded */
+const sendQuoteAcceptedEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  clientName,
+  assessmentCode,
+  planCode,
+  quotedMonthlyPrice,
+  portalUrl,
+}) => {
+  const subject = `Client onboarded${clientName ? ` — ${clientName}` : ''}`;
+
+  const text = [
+    `Hello ${recipientName || 'there'},`,
+    '',
+    `A care quote was accepted and the client is now onboarded.`,
+    clientName ? `Client: ${clientName}` : '',
+    assessmentCode ? `Assessment: ${assessmentCode}` : '',
+    planCode ? `Care plan: ${planCode}` : '',
+    quotedMonthlyPrice != null ? `Monthly price: ${money(quotedMonthlyPrice)}` : '',
+    portalUrl ? `View: ${portalUrl}` : '',
+    '',
+    'Thank you,',
+    agencyName || 'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('Client onboarded', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(recipientName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      The care quote was accepted and
+      ${clientName ? `<strong>${escapeHtml(clientName)}</strong> is` : 'the client is'} now onboarded
+      with <strong>${escapeHtml(agencyName || 'your agency')}</strong>.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${assessmentCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Assessment</span><br /><strong>${escapeHtml(assessmentCode)}</strong></p>` : ''}
+        ${planCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Care plan</span><br /><strong>${escapeHtml(planCode)}</strong></p>` : ''}
+        ${quotedMonthlyPrice != null ? `<p style="margin:0;"><span style="color:#64748b;">Monthly price</span><br /><strong>${escapeHtml(money(quotedMonthlyPrice))}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${portalUrl ? ctaButton(portalUrl, 'Open care plan') : ''}
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Care plan created or updated */
+const sendCarePlanUpdatedEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  clientName,
+  planCode,
+  status,
+  action = 'updated',
+  portalUrl,
+}) => {
+  const label = action === 'created' ? 'created' : 'updated';
+  const subject = `Care plan ${label}${clientName ? ` — ${clientName}` : ''}${planCode ? ` (${planCode})` : ''}`;
+
+  const text = [
+    `Hello ${recipientName || 'there'},`,
+    '',
+    `${agencyName || 'Your agency'} ${label} a care plan.`,
+    clientName ? `Client: ${clientName}` : '',
+    planCode ? `Plan code: ${planCode}` : '',
+    status ? `Status: ${status}` : '',
+    portalUrl ? `View: ${portalUrl}` : '',
+    '',
+    'Thank you,',
+    agencyName || 'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail(`Care plan ${label}`, `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(recipientName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      <strong>${escapeHtml(agencyName || 'Your agency')}</strong> has ${escapeHtml(label)} a care plan
+      ${clientName ? ` for <strong>${escapeHtml(clientName)}</strong>` : ''}.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${planCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Plan code</span><br /><strong>${escapeHtml(planCode)}</strong></p>` : ''}
+        ${status ? `<p style="margin:0;"><span style="color:#64748b;">Status</span><br /><strong>${escapeHtml(status)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${portalUrl ? ctaButton(portalUrl, 'View care plan') : ''}
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
 module.exports = {
   sendMail,
   sendCandidateApplicationEmail,
   sendCandidateStageFormsEmail,
   sendCandidateFormResetEmail,
+  sendCandidateRoundCompletedEmail,
   sendCaregiverWelcomeEmail,
   sendHrWelcomeEmail,
   sendEvvEnrollmentAssignedEmail,
+  sendAgencyInvitationEmail,
+  sendAgencyRegistrationWelcomeEmail,
+  sendAdminAgencyOnboardedEmail,
+  sendAgencyPaymentInvoiceEmail,
+  sendAssessmentCreatedEmail,
+  sendQuoteGeneratedEmail,
+  sendQuoteAcceptedEmail,
+  sendCarePlanUpdatedEmail,
   isConfigured,
 };

@@ -8,6 +8,7 @@ const InterviewFeedbackService = require('./interviewFeedback.service');
 const {
   sendCandidateApplicationEmail,
   sendCaregiverWelcomeEmail,
+  sendCandidateRoundCompletedEmail,
 } = require('../common/mail.service');
 
 const formatApplicationPopulated = (app) => {
@@ -498,7 +499,10 @@ const moveToNextStage = async (req, applicationId, options = {}) => {
     throw new Error(constants.MESSAGE.CANDIDATE.NO_NEXT_STAGE);
   }
 
-  app.agencyStageId = stages[currentIndex + 1]._id;
+  const completedStage = stages[currentIndex];
+  const nextStage = stages[currentIndex + 1];
+
+  app.agencyStageId = nextStage._id;
   await app.save();
 
   try {
@@ -507,6 +511,25 @@ const moveToNextStage = async (req, applicationId, options = {}) => {
     });
   } catch (err) {
     console.error('[moveToNextStage] form access issue failed', err.message);
+  }
+
+  try {
+    const [candidate, agency] = await Promise.all([
+      Model.CandidateModel.findById(app.candidateId).select('email firstName lastName'),
+      Model.AgencyModel.findById(agencyId).select('name'),
+    ]);
+    if (candidate?.email) {
+      await sendCandidateRoundCompletedEmail({
+        to: candidate.email,
+        candidateName: `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Candidate',
+        jobTitle: job?.jobTitle,
+        agencyName: agency?.name,
+        completedStageName: completedStage?.name,
+        nextStageName: nextStage?.name,
+      });
+    }
+  } catch (err) {
+    console.error('[moveToNextStage] congrats email failed', err.message);
   }
 
   const populated = await Model.CandidateApplicationModel.findById(app._id)

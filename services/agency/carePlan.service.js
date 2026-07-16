@@ -7,6 +7,43 @@ const {
 } = require('../../common/carePlanConstants');
 const { formatClient } = require('./client.service');
 const { syncFromCarePlan } = require('./evvEnrollment.service');
+const { sendCarePlanUpdatedEmail } = require('../common/mail.service');
+const {
+  getAgencyContext,
+  uniqueEmails,
+  agencyPortalUrl,
+} = require('../common/notifyHelpers');
+
+const notifyCarePlanChange = async (req, plan, client, action = 'updated') => {
+  try {
+    const agencyId = plan.agencyId?._id || plan.agencyId;
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+    const clientName = client
+      ? `${client.firstName || ''} ${client.lastName || ''}`.trim() || client.name
+      : '';
+    const clientEmail = client?.email || '';
+    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${plan._id || plan.id}`);
+    const emails = uniqueEmails([...ownerEmails, clientEmail]);
+    await Promise.all(emails.map(async (to) => {
+      try {
+        await sendCarePlanUpdatedEmail({
+          to,
+          recipientName: to === String(clientEmail).toLowerCase() ? clientName : ownerName,
+          agencyName,
+          clientName,
+          planCode: plan.planCode,
+          status: plan.status,
+          action,
+          portalUrl,
+        });
+      } catch (err) {
+        console.error('[carePlan] email failed', to, err.message);
+      }
+    }));
+  } catch (err) {
+    console.error('[carePlan] notify failed', err.message);
+  }
+};
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -157,6 +194,7 @@ const create = async (req, payload) => {
   if (populated.clientId) {
     await syncFromCarePlan(agencyId, populated);
   }
+  await notifyCarePlanChange(req, populated, populated.clientId || null, 'created');
   return formatCarePlan(populated, populated.clientId || null);
 };
 
@@ -191,6 +229,7 @@ const update = async (req, id, payload) => {
   if (populated.clientId) {
     await syncFromCarePlan(agencyId, populated);
   }
+  await notifyCarePlanChange(req, populated, populated.clientId || null, 'updated');
   return formatCarePlan(populated, populated.clientId || null);
 };
 

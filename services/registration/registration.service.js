@@ -2,6 +2,12 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const InvitationService = require('../admin/invitation.service');
 const AgencyService = require('../admin/agency.service');
+const {
+  sendAgencyRegistrationWelcomeEmail,
+  sendAdminAgencyOnboardedEmail,
+  sendAgencyPaymentInvoiceEmail,
+} = require('../common/mail.service');
+const { getAdminEmails, agencyPortalUrl } = require('../common/notifyHelpers');
 
 const checkUserIdAvailability = async (userId) => {
   const existing = await Model.AgencyAccountModel.findOne({
@@ -29,7 +35,64 @@ const createAccount = async (payload) => {
   return { userId: account.userId, fullName: account.fullName };
 };
 
-const submitRegistration = async (payload) => {
+const notifyRegistrationComplete = async (req, {
+  agency,
+  plan,
+  ownerEmail,
+  ownerName,
+  transactionId,
+  amount,
+}) => {
+  const loginUrl = agencyPortalUrl(req, '/login');
+  const invoiceAmount = amount ?? plan?.price;
+
+  if (ownerEmail) {
+    try {
+      await sendAgencyRegistrationWelcomeEmail({
+        to: ownerEmail,
+        ownerName,
+        agencyName: agency.name,
+        planName: plan?.name,
+        planPrice: plan?.price,
+        loginUrl,
+      });
+    } catch (err) {
+      console.error('[registration] welcome email failed', err.message);
+    }
+
+    try {
+      await sendAgencyPaymentInvoiceEmail({
+        to: ownerEmail,
+        ownerName,
+        agencyName: agency.name,
+        planName: plan?.name,
+        amount: invoiceAmount,
+        billingCycle: plan?.billingCycle || plan?.billing_cycle || 'month',
+        transactionId,
+        paidAt: new Date(),
+      });
+    } catch (err) {
+      console.error('[registration] invoice email failed', err.message);
+    }
+  }
+
+  try {
+    const adminEmails = await getAdminEmails();
+    await Promise.all(adminEmails.map((to) => sendAdminAgencyOnboardedEmail({
+      to,
+      agencyName: agency.name,
+      ownerName,
+      ownerEmail,
+      planName: plan?.name,
+      planPrice: plan?.price,
+      transactionId,
+    })));
+  } catch (err) {
+    console.error('[registration] admin onboard email failed', err.message);
+  }
+};
+
+const submitRegistration = async (req, payload) => {
   let invitation = null;
   if (payload.invitationToken) {
     const validated = await InvitationService.validateToken(payload.invitationToken);
@@ -85,6 +148,16 @@ const submitRegistration = async (payload) => {
     await InvitationService.markAccepted(payload.invitationToken);
   }
 
+  const ownerEmail = (payload.email || invitation?.email || '').toLowerCase();
+  await notifyRegistrationComplete(req, {
+    agency,
+    plan,
+    ownerEmail,
+    ownerName: payload.fullName || agency.ownerName,
+    transactionId: payload.transactionId || `reg_${Date.now()}`,
+    amount: payload.amount || plan.price,
+  });
+
   return AgencyService.formatAgency(agency);
 };
 
@@ -98,6 +171,7 @@ const processPayment = async (payload) => {
     amount: payload.amount || plan.price,
     status: 'paid',
     transactionId: `demo_${Date.now()}`,
+    billingCycle: plan.billingCycle || plan.billing_cycle || 'month',
   };
 };
 

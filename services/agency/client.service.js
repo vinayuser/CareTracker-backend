@@ -97,9 +97,18 @@ const formatClient = (doc) => {
 };
 
 const generateClientCode = async (agencyId) => {
-  const count = await Model.ClientModel.countDocuments({ agencyId });
-  return `CLT-${String(10001 + count).padStart(5, '0')}`;
+  // Use max existing code + 1 (countDocuments reuses codes after deletes / failed creates)
+  const latest = await Model.ClientModel.findOne({ agencyId })
+    .sort({ clientCode: -1 })
+    .select('clientCode')
+    .lean();
+  let next = 10001;
+  const match = String(latest?.clientCode || '').match(/(\d+)\s*$/);
+  if (match) next = Number(match[1]) + 1;
+  return `CLT-${String(next).padStart(5, '0')}`;
 };
+
+const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
 
 const getOptions = () => clientConstants.getOptions();
 
@@ -152,17 +161,25 @@ const getById = async (req, id) => {
 
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
-  const clientCode = await generateClientCode(agencyId);
   const data = pickPayload(payload);
+  let lastError;
 
-  const doc = await Model.ClientModel.create({
-    agencyId,
-    clientCode,
-    ...data,
-    status: data.status || 'Pending',
-  });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const doc = await Model.ClientModel.create({
+        agencyId,
+        clientCode: await generateClientCode(agencyId),
+        ...data,
+        status: data.status || 'Pending',
+      });
+      return formatClient(doc);
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      lastError = err;
+    }
+  }
 
-  return formatClient(doc);
+  throw lastError || new Error('Failed to create client');
 };
 
 const update = async (req, id, payload) => {
