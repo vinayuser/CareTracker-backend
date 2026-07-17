@@ -14,4 +14,6 @@ module.exports = {
   InsuranceIntake: require('./agency/insuranceIntake'),
   EvvEnrollment: require('./agency/evvEnrollment'),
   VisitSchedule: require('./agency/visitSchedule'),
+  EvvSettings: require('./agency/evvSettings'),
+  ClientInvoice: require('./agency/clientInvoice'),
 };

@@ -17,6 +17,8 @@ module.exports = {
   InsuranceIntakeController: require('./agency/InsuranceIntakeController'),
   EvvEnrollmentController: require('./agency/EvvEnrollmentController'),
   VisitScheduleController: require('./agency/VisitScheduleController'),
+  EvvSettingsController: require('./agency/EvvSettingsController'),
+  ClientInvoiceController: require('./agency/ClientInvoiceController'),
   CaregiverController: require('./caregiver/CaregiverController'),
   CaregiverEvvEnrollmentController: require('./caregiver/EvvEnrollmentController'),
 };

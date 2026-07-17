@@ -4,10 +4,22 @@ const Auth = require('../common/authenticate');
 
 // Unified auth
 router.post('/auth/login', Controller.AdminAuthController.login);
+router.post('/auth/forgot-password', Controller.AdminAuthController.forgotPassword);
+router.post('/auth/reset-password', Controller.AdminAuthController.resetPassword);
 router.get(
   '/auth/me',
   Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
   Controller.AdminAuthController.me,
+);
+router.put(
+  '/auth/me',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Controller.AdminAuthController.updateProfile,
+);
+router.patch(
+  '/auth/password',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Controller.AdminAuthController.changePassword,
 );
 
 // Public registration
@@ -144,7 +156,17 @@ router.post('/agency/visit-schedules/:id/regenerate', Auth.authenticate('agency_
 router.get('/agency/visits', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getVisits);
 router.post('/agency/visits/:id/approve', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.approveVisit);
 router.post('/agency/visits/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.rejectVisit);
+router.post('/agency/visits/:id/resolve-exception', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.resolveException);
 router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getEvvDashboard);
+router.get('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.get);
+router.put('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.update);
+
+router.get('/agency/invoices', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.getAll);
+router.get('/agency/invoices/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.getById);
+router.post('/agency/invoices/generate', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.generate);
+router.post('/agency/invoices/:id/send', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.send);
+router.post('/agency/invoices/:id/paid', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.markPaid);
+router.post('/agency/invoices/:id/void', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.void);
 
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
@@ -175,7 +197,9 @@ router.get('/caregiver/dashboard', Auth.authenticate('caregiver'), Controller.Vi
 router.get('/caregiver/evv-enrollments', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getAll);
 router.get('/caregiver/evv-enrollments/:id', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getById);
 router.post('/caregiver/evv-enrollments/:id/submit', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.submit);
+router.get('/caregiver/visits/active', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getActiveVisit);
 router.get('/caregiver/visits', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getCaregiverVisits);
+router.get('/caregiver/visits/:id/timer', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getVisitTimer);
 router.post('/caregiver/visits/:id/check-in', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkIn);
 router.post('/caregiver/visits/:id/check-out', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkOut);
 

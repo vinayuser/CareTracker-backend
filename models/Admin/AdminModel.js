@@ -31,6 +31,8 @@ const AdminModelSchema = new Schema(
       default: 'SUPER_ADMIN',
       required: true,
     },
+    passwordResetToken: { type: String, default: '', index: true },
+    passwordResetExpires: { type: Date, default: null },
   },
   {
     timestamps: true,

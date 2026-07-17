@@ -30,6 +30,8 @@ const VisitScheduleSchema = new mongoose.Schema(
     status: { type: String, enum: SCHEDULE_STATUSES, default: 'Active' },
     notes: { type: String, default: '' },
     address: { type: String, default: '' },
+    addressLat: { type: Number, default: null },
+    addressLng: { type: Number, default: null },
     createdByAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount' },
   },
   { timestamps: true },

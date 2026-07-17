@@ -95,7 +95,40 @@ const formatSchedule = (doc) => {
   return item;
 };
 
-const formatVisit = (doc) => {
+const haversineMeters = (lat1, lng1, lat2, lng2) => {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+};
+
+const computeLiveElapsedSeconds = (visit, now = new Date()) => {
+  const base = Number(visit.elapsedSeconds) || 0;
+  if (!visit.isTimerRunning) return base;
+  const segmentStart = visit.lastSegmentStartAt || visit.checkInAt;
+  if (!segmentStart) return base;
+  const extra = Math.max(0, Math.floor((now.getTime() - new Date(segmentStart).getTime()) / 1000));
+  return base + extra;
+};
+
+const getOrCreateEvvSettings = async (agencyId) => {
+  let settings = await Model.EvvSettingsModel.findOne({ agencyId });
+  if (!settings) {
+    settings = await Model.EvvSettingsModel.create({ agencyId });
+  }
+  return settings;
+};
+
+const resolveHourlyRate = async (carePlanId) => {
+  const plan = await Model.CarePlanModel.findById(carePlanId).select('hourlyRate');
+  const rate = Number(plan?.hourlyRate);
+  return Number.isFinite(rate) && rate > 0 ? rate : 25;
+};
+
+const formatVisit = (doc, { now = new Date() } = {}) => {
   const item = functions.toClientDoc(doc);
   if (!item) return null;
   item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
@@ -103,6 +136,7 @@ const formatVisit = (doc) => {
   item.carePlanId = String(doc.carePlanId?._id || doc.carePlanId || '');
   item.clientId = String(doc.clientId?._id || doc.clientId || '');
   item.caregiverAccountId = String(doc.caregiverAccountId?._id || doc.caregiverAccountId || '');
+  item.invoiceId = item.invoiceId ? String(item.invoiceId) : null;
   if (!item.lateCheckInUntil && item.latestCheckInAt) {
     item.lateCheckInUntil = new Date(new Date(item.latestCheckInAt).getTime() + LATE_EXTRA_MS);
   }
@@ -114,6 +148,26 @@ const formatVisit = (doc) => {
   }
   item.canApprove = Boolean(item.checkOutAt) && item.approvalStatus === 'Pending';
   item.approvedBy = item.approvedBy ? String(item.approvedBy) : null;
+  item.liveElapsedSeconds = computeLiveElapsedSeconds(doc, now);
+  item.isTimerRunning = Boolean(doc.isTimerRunning);
+  item.billableHours = item.billableMinutes != null
+    ? Number((Number(item.billableMinutes) / 60).toFixed(2))
+    : null;
+  const earliest = item.earliestCheckInAt ? new Date(item.earliestCheckInAt) : null;
+  const lateUntil = resolveLateCheckInUntil(doc);
+  item.clockAllowed = Boolean(
+    item.canCheckIn
+    && earliest
+    && now >= earliest
+    && (!lateUntil || now <= lateUntil),
+  );
+  if (item.canCheckIn && earliest && now < earliest) {
+    item.clockBlockReason = constants.MESSAGE.VISIT.TOO_EARLY;
+  } else if (item.canCheckIn && lateUntil && now > lateUntil) {
+    item.clockBlockReason = constants.MESSAGE.VISIT.TOO_LATE;
+  } else {
+    item.clockBlockReason = '';
+  }
   return item;
 };
 
@@ -153,6 +207,8 @@ const buildVisitPayload = (schedule, dateKey, visitCode) => {
     clientName: schedule.clientName || '',
     caregiverName: schedule.caregiverName || '',
     address: schedule.address || '',
+    addressLat: schedule.addressLat ?? null,
+    addressLng: schedule.addressLng ?? null,
     scheduledDate: dateKey,
     scheduledStartAt: startAt,
     scheduledEndAt: endAt,
@@ -282,6 +338,8 @@ const createSchedule = async (req, payload) => {
     status: payload.status || 'Active',
     notes: payload.notes || '',
     address: payload.address || formatAddress(client),
+    addressLat: client.homeLat ?? null,
+    addressLng: client.homeLng ?? null,
     createdByAccountId: getAccountId(req),
   });
 
@@ -492,10 +550,11 @@ const getCaregiverVisits = async (req, query = {}) => {
 const checkInVisit = async (req, visitId, payload = {}) => {
   const caregiver = getCaregiverAccount(req);
   const agencyId = getCaregiverAgencyId(req);
+  const caregiverId = caregiver._id || caregiver.id;
   const visit = await Model.VisitModel.findOne({
     _id: visitId,
     agencyId,
-    caregiverAccountId: caregiver._id || caregiver.id,
+    caregiverAccountId: caregiverId,
   });
   if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
   if (visit.checkInAt) {
@@ -503,6 +562,16 @@ const checkInVisit = async (req, visitId, payload = {}) => {
   }
   if (!['Scheduled', 'Late', 'Missed'].includes(visit.status)) {
     throw new Error(constants.MESSAGE.VISIT.INVALID_CHECK_IN);
+  }
+
+  const otherActive = await Model.VisitModel.findOne({
+    agencyId,
+    caregiverAccountId: caregiverId,
+    isTimerRunning: true,
+    _id: { $ne: visit._id },
+  });
+  if (otherActive) {
+    throw new Error(constants.MESSAGE.VISIT.TIMER_ACTIVE_ELSEWHERE);
   }
 
   await assertVerifiedEnrollment(agencyId, visit.caregiverAccountId, visit.carePlanId);
@@ -522,19 +591,68 @@ const checkInVisit = async (req, visitId, payload = {}) => {
     throw new Error(constants.MESSAGE.VISIT.TOO_LATE);
   }
 
+  // Soft geofence
+  const settings = await getOrCreateEvvSettings(agencyId);
+  const lat = payload.lat != null ? Number(payload.lat) : null;
+  const lng = payload.lng != null ? Number(payload.lng) : null;
+  if (!visit.addressLat || !visit.addressLng) {
+    const client = await Model.ClientModel.findById(visit.clientId).select('homeLat homeLng');
+    if (client?.homeLat != null && client?.homeLng != null) {
+      visit.addressLat = client.homeLat;
+      visit.addressLng = client.homeLng;
+    }
+  }
+  visit.geoWarning = '';
+  visit.geoDistanceMeters = null;
+  visit.geoWithinFence = null;
+  if (
+    settings.geoEnforcement !== 'off'
+    && lat != null && lng != null
+    && visit.addressLat != null && visit.addressLng != null
+  ) {
+    const distance = haversineMeters(lat, lng, visit.addressLat, visit.addressLng);
+    const radius = Number(settings.geoRadiusMeters) || 500;
+    visit.geoDistanceMeters = Math.round(distance);
+    visit.geoWithinFence = distance <= radius;
+    if (!visit.geoWithinFence) {
+      const msg = `Check-in is ${Math.round(distance)}m from client home (allowed ${radius}m)`;
+      if (settings.geoEnforcement === 'block') {
+        throw new Error(constants.MESSAGE.VISIT.GEO_BLOCKED);
+      }
+      visit.geoWarning = msg;
+    }
+  }
+
   const late = now > visit.latestCheckInAt;
   visit.checkInAt = now;
   visit.checkInMethod = payload.method || 'Mobile App';
-  visit.checkInLat = payload.lat ?? null;
-  visit.checkInLng = payload.lng ?? null;
+  visit.checkInLat = lat;
+  visit.checkInLng = lng;
   visit.lateCheckIn = late;
   visit.status = late ? 'Exception' : 'InProgress';
+  visit.isTimerRunning = true;
+  visit.lastSegmentStartAt = now;
+  visit.elapsedSeconds = 0;
+  visit.clockLogs = [{
+    type: 'clock-in',
+    at: now,
+    lat,
+    lng,
+    note: late ? 'Late check-in' : (visit.geoWarning || ''),
+  }];
   if (late) {
     visit.exceptionReason = payload.exception_reason
       || `Checked in after ${visit.graceMinutes || 15}-minute grace window`;
+    visit.exceptionAudit = [{
+      at: now,
+      byAccountId: caregiverId,
+      byName: caregiver.fullName || caregiver.name || '',
+      action: 'late_check_in',
+      note: visit.exceptionReason,
+    }];
   }
   await visit.save();
-  return formatVisit(visit);
+  return formatVisit(visit, { now });
 };
 
 const checkOutVisit = async (req, visitId, payload = {}) => {
@@ -561,11 +679,31 @@ const checkOutVisit = async (req, visitId, payload = {}) => {
     throw new Error(constants.MESSAGE.VISIT.INVALID_CHECK_OUT);
   }
 
+  const liveElapsed = computeLiveElapsedSeconds(visit, now);
+  visit.elapsedSeconds = liveElapsed;
+  visit.billableSeconds = liveElapsed;
+  visit.billableMinutes = Math.max(1, Math.round(liveElapsed / 60));
+  const rate = await resolveHourlyRate(visit.carePlanId);
+  visit.hourlyRateSnapshot = rate;
+  visit.amountSnapshot = Number(((visit.billableMinutes / 60) * rate).toFixed(2));
+
   visit.checkOutAt = now;
   visit.checkOutMethod = payload.method || 'Mobile App';
   visit.checkOutLat = payload.lat ?? null;
   visit.checkOutLng = payload.lng ?? null;
   visit.notes = payload.notes || visit.notes || '';
+  visit.isTimerRunning = false;
+  visit.lastSegmentStartAt = null;
+  visit.clockLogs = [
+    ...(visit.clockLogs || []),
+    {
+      type: 'clock-out',
+      at: now,
+      lat: payload.lat ?? null,
+      lng: payload.lng ?? null,
+      note: '',
+    },
+  ];
   // Late visits stay Exception (red for agency) but are fully ended via checkOutAt.
   visit.status = visit.lateCheckIn ? 'Exception' : 'Completed';
   visit.approvalStatus = 'Pending';
@@ -575,7 +713,40 @@ const checkOutVisit = async (req, visitId, payload = {}) => {
   visit.rejectionReason = '';
   visit.approvalNotes = '';
   await visit.save();
+  return formatVisit(visit, { now });
+};
+
+const getActiveVisitForCaregiver = async (req) => {
+  const caregiver = getCaregiverAccount(req);
+  const agencyId = getCaregiverAgencyId(req);
+  const visit = await Model.VisitModel.findOne({
+    agencyId,
+    caregiverAccountId: caregiver._id || caregiver.id,
+    isTimerRunning: true,
+  }).sort({ checkInAt: -1 });
+  if (!visit) return null;
   return formatVisit(visit);
+};
+
+const getVisitTimer = async (req, visitId) => {
+  const caregiver = getCaregiverAccount(req);
+  const agencyId = getCaregiverAgencyId(req);
+  const visit = await Model.VisitModel.findOne({
+    _id: visitId,
+    agencyId,
+    caregiverAccountId: caregiver._id || caregiver.id,
+  });
+  if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+  const now = new Date();
+  const formatted = formatVisit(visit, { now });
+  return {
+    visit: formatted,
+    isTimerRunning: Boolean(visit.isTimerRunning),
+    elapsedSeconds: formatted.liveElapsedSeconds,
+    clockAllowed: formatted.clockAllowed,
+    clockBlockReason: formatted.clockBlockReason,
+    serverTime: now.toISOString(),
+  };
 };
 
 const resolveReviewerName = (account) => {
@@ -604,12 +775,42 @@ const approveVisit = async (req, visitId, payload = {}) => {
   const visit = await Model.VisitModel.findOne({ _id: visitId, agencyId });
   assertPendingEndedVisit(visit);
 
+  if (!visit.hourlyRateSnapshot) {
+    visit.hourlyRateSnapshot = await resolveHourlyRate(visit.carePlanId);
+  }
+  if (!visit.billableMinutes && visit.checkInAt && visit.checkOutAt) {
+    const secs = Math.max(
+      0,
+      Math.floor((new Date(visit.checkOutAt) - new Date(visit.checkInAt)) / 1000),
+    );
+    visit.elapsedSeconds = visit.elapsedSeconds || secs;
+    visit.billableSeconds = visit.billableSeconds || secs;
+    visit.billableMinutes = Math.max(1, Math.round(secs / 60));
+  }
+  visit.amountSnapshot = Number(
+    (((visit.billableMinutes || 0) / 60) * (visit.hourlyRateSnapshot || 0)).toFixed(2),
+  );
+
   visit.approvalStatus = 'Approved';
   visit.approvedBy = reviewer?._id || reviewer?.id || null;
   visit.approvedByName = resolveReviewerName(reviewer);
   visit.approvedAt = new Date();
   visit.rejectionReason = '';
   visit.approvalNotes = payload.notes || '';
+  if (visit.lateCheckIn || visit.status === 'Exception') {
+    visit.exceptionResolved = true;
+    visit.exceptionResolutionNote = payload.notes || 'Approved by agency';
+    visit.exceptionAudit = [
+      ...(visit.exceptionAudit || []),
+      {
+        at: new Date(),
+        byAccountId: reviewer?._id || reviewer?.id || null,
+        byName: resolveReviewerName(reviewer),
+        action: 'resolved_on_approve',
+        note: visit.exceptionResolutionNote,
+      },
+    ];
+  }
   await visit.save();
   return formatVisit(visit);
 };
@@ -626,6 +827,37 @@ const rejectVisit = async (req, visitId, payload = {}) => {
   visit.approvedAt = new Date();
   visit.rejectionReason = payload.reason || 'Rejected by agency';
   visit.approvalNotes = payload.notes || '';
+  visit.exceptionAudit = [
+    ...(visit.exceptionAudit || []),
+    {
+      at: new Date(),
+      byAccountId: reviewer?._id || reviewer?.id || null,
+      byName: resolveReviewerName(reviewer),
+      action: 'rejected',
+      note: visit.rejectionReason,
+    },
+  ];
+  await visit.save();
+  return formatVisit(visit);
+};
+
+const resolveVisitException = async (req, visitId, payload = {}) => {
+  const agencyId = getAgencyId(req);
+  const reviewer = getAgencyAccount(req);
+  const visit = await Model.VisitModel.findOne({ _id: visitId, agencyId });
+  if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+  visit.exceptionResolved = true;
+  visit.exceptionResolutionNote = payload.note || payload.notes || '';
+  visit.exceptionAudit = [
+    ...(visit.exceptionAudit || []),
+    {
+      at: new Date(),
+      byAccountId: reviewer?._id || reviewer?.id || null,
+      byName: resolveReviewerName(reviewer),
+      action: 'manual_resolve',
+      note: visit.exceptionResolutionNote,
+    },
+  ];
   await visit.save();
   return formatVisit(visit);
 };
@@ -1085,10 +1317,16 @@ module.exports = {
   getCaregiverVisits,
   checkInVisit,
   checkOutVisit,
+  getActiveVisitForCaregiver,
+  getVisitTimer,
   approveVisit,
   rejectVisit,
+  resolveVisitException,
   regenerateScheduleVisits,
   generateVisitsForSchedule,
   getEvvDashboard,
   getCaregiverDashboard,
+  getOrCreateEvvSettings,
+  computeLiveElapsedSeconds,
+  formatVisit,
 };

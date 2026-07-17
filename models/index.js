@@ -20,4 +20,6 @@ module.exports = {
   EvvEnrollmentModel: require('./EvvEnrollmentModel'),
   VisitScheduleModel: require('./VisitScheduleModel'),
   VisitModel: require('./VisitModel'),
+  EvvSettingsModel: require('./EvvSettingsModel'),
+  ClientInvoiceModel: require('./ClientInvoiceModel'),
 };

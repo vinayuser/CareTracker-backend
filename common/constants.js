@@ -11,6 +11,12 @@ module.exports = {
       LOGIN_SUCCESS: 'Login Successful',
       INVALID_CREDENTIALS: 'Invalid email or password',
       UNAUTHORIZED: 'Unauthorized Access',
+      PROFILE_UPDATED: 'Profile updated successfully',
+      PASSWORD_UPDATED: 'Password updated successfully',
+      CURRENT_PASSWORD_INVALID: 'Current password is incorrect',
+      FORGOT_PASSWORD_SENT: 'If an account exists for that email, a reset link has been sent.',
+      RESET_PASSWORD_SUCCESS: 'Password reset successfully. You can sign in now.',
+      RESET_TOKEN_INVALID: 'This reset link is invalid or has expired.',
     },
     USER: {
       NOT_FOUND: 'User Not Found',
@@ -176,6 +182,20 @@ module.exports = {
       REJECTED: 'Visit rejected',
       INVALID_APPROVAL: 'Only ended visits pending review can be approved or rejected',
       ALREADY_REVIEWED: 'This visit has already been reviewed',
+      TIMER_ACTIVE_ELSEWHERE: 'You already have an active visit clock running. Clock out first.',
+      GEO_BLOCKED: 'You are outside the allowed check-in area for this client',
+      NO_ACTIVE_TIMER: 'No active visit timer found',
+    },
+    EVV_SETTINGS: {
+      UPDATED: 'EVV settings saved',
+    },
+    INVOICE: {
+      CREATED: 'Invoice draft created',
+      SENT: 'Invoice sent',
+      UPDATED: 'Invoice updated',
+      NOT_FOUND: 'Invoice not found',
+      NO_VISITS: 'No approved unbilled visits found for this period',
+      VOIDED: 'Invoice voided',
     },
   },
 };

@@ -24,6 +24,9 @@ const ClientSchema = new mongoose.Schema(
     state: { type: String, default: '' },
     zipCode: { type: String, default: '' },
     country: { type: String, default: 'United States' },
+    /** Optional home GPS for EVV geofence */
+    homeLat: { type: Number, default: null },
+    homeLng: { type: Number, default: null },
     phone: { type: String, default: '' },
     phoneHome: { type: String, default: '' },
     email: { type: String, default: '', lowercase: true },

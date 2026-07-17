@@ -140,6 +140,33 @@ module.exports.checkOut = async (req, res, next) => {
   }
 };
 
+module.exports.getActiveVisit = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.getActiveVisitForCaregiver(req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getVisitTimer = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.getVisitTimer(req, req.params.id);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.resolveException = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.resolveVisitException(req, req.params.id, req.body || {});
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.approveVisit = async (req, res, next) => {
   try {
     await Validation.VisitSchedule.approve.validateAsync(req.body || {});

@@ -26,6 +26,8 @@ const AgencyAccountSchema = new mongoose.Schema(
     employeeId: { type: String, default: '' },
     phone: { type: String, default: '' },
     dateOfBirth: { type: String, default: '' },
+    passwordResetToken: { type: String, default: '', index: true },
+    passwordResetExpires: { type: Date, default: null },
   },
   {
     timestamps: true,

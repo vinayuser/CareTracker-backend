@@ -882,6 +882,62 @@ const sendCarePlanUpdatedEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+/** Password reset link for any portal user */
+const sendPasswordResetEmail = async ({
+  to,
+  name,
+  resetUrl,
+  expiresAt,
+  req,
+}) => {
+  const subject = 'Reset your CareTraker password';
+  const displayName = name || 'there';
+  const expiry = expiresAt
+    ? new Date(expiresAt).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    : '1 hour';
+  const link = resetUrl || `${getFrontendUrl(req)}/reset-password`;
+
+  const text = [
+    `Hello ${displayName},`,
+    '',
+    'We received a request to reset your CareTraker password.',
+    '',
+    `Reset your password: ${link}`,
+    `This link expires at ${expiry}.`,
+    '',
+    'If you did not request this, you can ignore this email.',
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].join('\n');
+
+  const html = wrapEmail('Reset your password', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(displayName)},</p>
+    <p style="margin:0 0 12px;">
+      We received a request to reset your CareTraker password. Click the button below to choose a new password.
+    </p>
+    ${ctaButton(link, 'Reset Password')}
+    <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+      This link expires at ${escapeHtml(String(expiry))}.
+    </p>
+    <p style="margin:16px 0 0;font-size:13px;color:#64748b;">
+      Or copy this link:<br />
+      <a href="${escapeHtml(link)}" style="color:${PRIMARY};word-break:break-all;">${escapeHtml(link)}</a>
+    </p>
+    <p style="margin:20px 0 0;font-size:13px;color:#94a3b8;">
+      If you did not request a password reset, you can safely ignore this email.
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
 module.exports = {
   sendMail,
   sendCandidateApplicationEmail,
@@ -901,5 +957,6 @@ module.exports = {
   sendQuoteGeneratedEmail,
   sendQuoteAcceptedEmail,
   sendCarePlanUpdatedEmail,
+  sendPasswordResetEmail,
   isConfigured,
 };

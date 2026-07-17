@@ -27,6 +27,10 @@ const MODULE_GROUPS = [
     ],
   },
   {
+    title: 'Billing',
+    keys: ['AGENCY_BILLING'],
+  },
+  {
     title: 'Caregivers',
     keys: ['AGENCY_CAREGIVERS'],
   },
@@ -49,6 +53,7 @@ const MODULE_LABELS = {
   AGENCY_EVV_UNVERIFIED: 'Unverified Visits',
   AGENCY_EVV_ENROLLMENTS: 'Enrollments',
   AGENCY_EVV_SETTINGS: 'EVV Settings',
+  AGENCY_BILLING: 'Invoices',
   AGENCY_CAREGIVERS: 'Caregivers',
   AGENCY_HIRING_PIPELINE: 'Hiring Pipeline',
   AGENCY_JOBS: 'Jobs',
