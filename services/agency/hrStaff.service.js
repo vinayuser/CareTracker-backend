@@ -2,7 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { sanitizeModuleAccess, DEFAULT_HR_MODULES } = require('../../common/agencyModules');
-const { sendHrWelcomeEmail } = require('../common/mail.service');
+const { sendHrWelcomeEmail, sendHrCustomEmail } = require('../common/mail.service');
 
 const formatHrStaff = (doc) => {
   const client = functions.toClientDoc(doc);
@@ -242,6 +242,52 @@ const updateStatus = async (req, id, status) => {
   return formatHrStaff(member);
 };
 
+const setPassword = async (req, id, password) => {
+  assertAgencyOwner(req);
+  const agencyId = getAgencyId(req);
+  const member = await Model.HrStaffModel.findOne({ _id: id, agencyId });
+  if (!member) throw new Error(constants.MESSAGE.HR.NOT_FOUND);
+  if (!member.accountId) throw new Error(constants.MESSAGE.HR.NOT_FOUND);
+
+  const account = await Model.AgencyAccountModel.findById(member.accountId);
+  if (!account) throw new Error(constants.MESSAGE.HR.NOT_FOUND);
+
+  await account.setPassword(password);
+  // Invalidate existing sessions
+  account.jti = functions.generateRandomStringAndNumbers(20);
+  await account.save();
+
+  return formatHrStaff(member);
+};
+
+const sendEmail = async (req, id, payload) => {
+  assertAgencyOwner(req);
+  const agencyId = getAgencyId(req);
+  const member = await Model.HrStaffModel.findOne({ _id: id, agencyId });
+  if (!member) throw new Error(constants.MESSAGE.HR.NOT_FOUND);
+  if (!member.email) throw new Error('HR staff email not found');
+
+  const [agency] = await Promise.all([
+    Model.AgencyModel.findById(agencyId).select('name'),
+  ]);
+  const owner = req.agency_owner;
+
+  await sendHrCustomEmail({
+    to: member.email,
+    hrName: `${member.firstName || ''} ${member.lastName || ''}`.trim(),
+    agencyName: agency?.name,
+    subject: payload.subject,
+    message: payload.message,
+    senderName: owner?.fullName || owner?.name || '',
+  });
+
+  return {
+    id: String(member._id),
+    email: member.email,
+    subject: payload.subject,
+  };
+};
+
 module.exports = {
   getStats,
   getAll,
@@ -249,5 +295,7 @@ module.exports = {
   create,
   update,
   updateStatus,
+  setPassword,
+  sendEmail,
   formatHrStaff,
 };

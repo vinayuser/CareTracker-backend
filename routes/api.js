@@ -4,6 +4,11 @@ const Auth = require('../common/authenticate');
 
 // Unified auth
 router.post('/auth/login', Controller.AdminAuthController.login);
+router.get(
+  '/auth/me',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Controller.AdminAuthController.me,
+);
 
 // Public registration
 router.get('/registration/check-user-id', Controller.RegistrationController.checkUserId);
@@ -55,6 +60,8 @@ router.get('/agency/hr-staff/:id', Auth.authenticate('agency_owner', 'hr'), Cont
 router.post('/agency/hr-staff', Auth.authenticate('agency_owner'), Controller.HrStaffController.create);
 router.put('/agency/hr-staff/:id', Auth.authenticate('agency_owner'), Controller.HrStaffController.update);
 router.patch('/agency/hr-staff/:id/status', Auth.authenticate('agency_owner'), Controller.HrStaffController.updateStatus);
+router.patch('/agency/hr-staff/:id/password', Auth.authenticate('agency_owner'), Controller.HrStaffController.setPassword);
+router.post('/agency/hr-staff/:id/email', Auth.authenticate('agency_owner'), Controller.HrStaffController.sendEmail);
 
 router.get('/agency/hiring-pipeline/documents', Auth.authenticate('agency_owner', 'hr'), Controller.HiringPipelineController.getDocuments);
 router.get('/agency/hiring-pipeline', Auth.authenticate('agency_owner', 'hr'), Controller.HiringPipelineController.getPipeline);
@@ -77,7 +84,10 @@ router.post('/agency/jobs/:id/reopen-hiring', Auth.authenticate('agency_owner', 
 router.get('/agency/caregivers/stats', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.getStats);
 router.get('/agency/caregivers', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.getAll);
 router.get('/agency/caregivers/:id', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.getById);
-router.patch('/agency/caregivers/:id/password', Auth.authenticate('agency_owner'), Controller.AgencyCaregiverController.setPassword);
+router.put('/agency/caregivers/:id', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.update);
+router.patch('/agency/caregivers/:id/status', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.updateStatus);
+router.patch('/agency/caregivers/:id/password', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.setPassword);
+router.post('/agency/caregivers/:id/email', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.sendEmail);
 
 router.get('/agency/clients/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getOptions);
 router.get('/agency/clients/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getStats);
@@ -152,6 +162,7 @@ router.post('/agency/job-applications/:id/complete-hire', Auth.authenticate('age
 router.get('/agency/job-applications/:id/form-submissions', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.getSubmissions);
 router.get('/agency/job-applications/:id/form-submissions/:submissionId/print', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.getPrintData);
 router.post('/agency/job-applications/:id/resend-form-email', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.resendEmail);
+router.post('/agency/job-applications/:id/email', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.sendEmail);
 router.post('/agency/job-applications/:id/form-submissions/:documentCode/reset', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.resetSubmission);
 router.get('/agency/job-applications/:id/interview-feedback', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.get);
 router.put('/agency/job-applications/:id/interview-feedback/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.InterviewFeedbackController.save);

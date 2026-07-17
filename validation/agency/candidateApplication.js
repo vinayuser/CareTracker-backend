@@ -29,4 +29,8 @@ module.exports = {
   stageMove: Joi.object({
     document_codes: documentCodes,
   }),
+  sendEmail: Joi.object({
+    subject: Joi.string().trim().min(1).max(200).required(),
+    message: Joi.string().trim().min(1).max(5000).required(),
+  }),
 };

@@ -58,3 +58,23 @@ module.exports.updateStatus = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.setPassword = async (req, res, next) => {
+  try {
+    await Validation.HrStaff.setPassword.validateAsync(req.body);
+    const data = await HrStaffService.setPassword(req, req.params.id, req.body.password);
+    return res.success(constants.MESSAGE.HR.PASSWORD_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.sendEmail = async (req, res, next) => {
+  try {
+    await Validation.HrStaff.sendEmail.validateAsync(req.body);
+    const data = await HrStaffService.sendEmail(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.HR.EMAIL_SENT, data);
+  } catch (error) {
+    next(error);
+  }
+};

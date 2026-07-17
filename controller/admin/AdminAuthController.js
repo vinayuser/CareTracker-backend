@@ -11,3 +11,12 @@ module.exports.login = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.me = async (req, res, next) => {
+  try {
+    const user = await AdminAuthService.getMe(req);
+    return res.success(constants.MESSAGE.SUCCESS, { user });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -129,6 +129,16 @@ module.exports.getByJobAndStage = async (req, res, next) => {
   }
 };
 
+module.exports.sendEmail = async (req, res, next) => {
+  try {
+    await Validation.CandidateApplication.sendEmail.validateAsync(req.body);
+    const data = await CandidateApplicationService.sendEmail(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.CANDIDATE.EMAIL_SENT, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.getRejectedByJob = async (req, res, next) => {
   try {
     const data = await CandidateApplicationService.getRejectedByJob(req, req.params.jobId);

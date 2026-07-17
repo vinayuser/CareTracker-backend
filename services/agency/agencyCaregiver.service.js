@@ -2,6 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { sendCandidateCustomEmail } = require('../common/mail.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -10,10 +11,6 @@ const getAgencyId = (req) => {
   const agencyId = account?.agencyId?._id || account?.agencyId;
   if (!agencyId) throw new Error('Agency not found for this account');
   return agencyId;
-};
-
-const assertAgencyOwner = (req) => {
-  if (!req.agency_owner) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
 };
 
 const resolveJobContext = async (account, agencyId) => {
@@ -167,15 +164,80 @@ const getById = async (req, id) => {
 };
 
 const setPassword = async (req, id, password) => {
-  assertAgencyOwner(req);
   const agencyId = getAgencyId(req);
   const account = await Model.AgencyAccountModel.findOne({ _id: id, agencyId, role: 'CAREGIVER' });
   if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
 
   await account.setPassword(password);
+  account.jti = functions.generateRandomStringAndNumbers(20);
   await account.save();
 
   return formatCaregiver(account, agencyId);
+};
+
+const update = async (req, id, payload) => {
+  const agencyId = getAgencyId(req);
+  const account = await Model.AgencyAccountModel.findOne({ _id: id, agencyId, role: 'CAREGIVER' });
+  if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+
+  if (payload.email || payload.userId) {
+    const email = (payload.email || account.email || '').toLowerCase();
+    const userId = (payload.userId || account.userId || '').toLowerCase();
+    const conflict = await Model.AgencyAccountModel.findOne({
+      _id: { $ne: account._id },
+      $or: [{ email }, { userId }],
+    });
+    if (conflict) throw new Error(constants.MESSAGE.CAREGIVER.USER_ID_TAKEN);
+  }
+
+  if (payload.fullName !== undefined) account.fullName = payload.fullName.trim();
+  if (payload.email !== undefined) account.email = payload.email.toLowerCase().trim();
+  if (payload.userId !== undefined) account.userId = payload.userId.toLowerCase().trim();
+  if (payload.phone !== undefined) account.phone = payload.phone;
+  if (payload.employeeId !== undefined) account.employeeId = payload.employeeId;
+  if (payload.dateOfBirth !== undefined) account.dateOfBirth = payload.dateOfBirth;
+  if (payload.status !== undefined) account.status = payload.status;
+
+  await account.save();
+  return formatCaregiver(account, agencyId);
+};
+
+const updateStatus = async (req, id, status) => {
+  const agencyId = getAgencyId(req);
+  const account = await Model.AgencyAccountModel.findOne({ _id: id, agencyId, role: 'CAREGIVER' });
+  if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+
+  account.status = status;
+  if (status === 'Inactive') {
+    account.jti = functions.generateRandomStringAndNumbers(20);
+  }
+  await account.save();
+  return formatCaregiver(account, agencyId);
+};
+
+const sendEmail = async (req, id, payload) => {
+  const agencyId = getAgencyId(req);
+  const account = await Model.AgencyAccountModel.findOne({ _id: id, agencyId, role: 'CAREGIVER' });
+  if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+  if (!account.email) throw new Error(constants.MESSAGE.CAREGIVER.EMAIL_MISSING);
+
+  const agency = await Model.AgencyModel.findById(agencyId).select('name');
+  const sender = getAgencyAccount(req);
+
+  await sendCandidateCustomEmail({
+    to: account.email,
+    candidateName: account.fullName || 'Caregiver',
+    agencyName: agency?.name,
+    subject: payload.subject,
+    message: payload.message,
+    senderName: sender?.fullName || sender?.name || '',
+  });
+
+  return {
+    id: String(account._id),
+    email: account.email,
+    subject: payload.subject,
+  };
 };
 
 module.exports = {
@@ -183,4 +245,7 @@ module.exports = {
   getAll,
   getById,
   setPassword,
+  update,
+  updateStatus,
+  sendEmail,
 };

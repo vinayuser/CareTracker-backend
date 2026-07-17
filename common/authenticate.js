@@ -10,6 +10,11 @@ const PORTAL_ROLES = {
   caregiver: 'caregiver',
 };
 
+const jtiMatches = (decoded, doc) => {
+  if (!decoded?.jti || !doc?.jti) return true;
+  return String(decoded.jti) === String(doc.jti);
+};
+
 module.exports.authenticate = (...args) => async (req, res, next) => {
   try {
     if (tokenBlacklist.has(req.headers.authorization)) {
@@ -38,8 +43,11 @@ module.exports.authenticate = (...args) => async (req, res, next) => {
     }
 
     if (decoded != null && roles.includes(PORTAL_ROLES.super_admin)) {
-      role = PORTAL_ROLES.super_admin;
-      doc = await Model.AdminModel.findOne({ _id: decoded._id });
+      const admin = await Model.AdminModel.findOne({ _id: decoded._id });
+      if (admin && jtiMatches(decoded, admin)) {
+        role = PORTAL_ROLES.super_admin;
+        doc = admin;
+      }
     }
 
     if (
@@ -50,7 +58,7 @@ module.exports.authenticate = (...args) => async (req, res, next) => {
         roles.includes(PORTAL_ROLES.caregiver))
     ) {
       const account = await Model.AgencyAccountModel.findOne({ _id: decoded._id }).populate('agencyId');
-      if (account && account.status !== 'Inactive') {
+      if (account && account.status !== 'Inactive' && jtiMatches(decoded, account)) {
         const accountRole = String(account.role || 'AGENCY_OWNER').toLowerCase();
         if (roles.includes(accountRole)) {
           role = accountRole;

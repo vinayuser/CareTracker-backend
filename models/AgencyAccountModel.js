@@ -34,9 +34,9 @@ const AgencyAccountSchema = new mongoose.Schema(
 
 AgencyAccountSchema.methods.setPassword = function (password) {
   return new Promise((resolve, reject) => {
-    if (!password) reject(new Error('Missing Password'));
+    if (!password) return reject(new Error('Missing Password'));
     bcrypt.hash(password, 10, (err, hash) => {
-      if (err) reject(err);
+      if (err) return reject(err);
       this.password = hash;
       resolve(this);
     });
@@ -45,9 +45,10 @@ AgencyAccountSchema.methods.setPassword = function (password) {
 
 AgencyAccountSchema.methods.authenticate = function (password) {
   return new Promise((resolve, reject) => {
-    if (!password) reject(new Error('MISSING_PASSWORD'));
+    if (!password) return reject(new Error('MISSING_PASSWORD'));
     bcrypt.compare(password, this.password, (error, result) => {
-      if (!result) reject(new Error('Invalid Password'));
+      if (error) return reject(error);
+      if (!result) return reject(new Error('Invalid Password'));
       resolve(this);
     });
   });

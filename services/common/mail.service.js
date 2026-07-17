@@ -396,6 +396,79 @@ const sendHrWelcomeEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+/** Custom message from agency staff to a recipient (HR, candidate, etc.) */
+const sendCustomMessageEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  subject,
+  message,
+  senderName,
+}) => {
+  const agency = agencyName || 'Your agency';
+  const emailSubject = subject || `Message from ${agency}`;
+  const body = String(message || '').trim();
+  const safeBodyHtml = escapeHtml(body).replace(/\n/g, '<br />');
+  const name = recipientName || 'there';
+
+  const text = [
+    `Hello ${name},`,
+    '',
+    body,
+    '',
+    '—',
+    senderName ? `${senderName}` : '',
+    agency,
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail(emailSubject, `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(name)},</p>
+    <div style="margin:0 0 16px;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#334155;line-height:1.55;">
+      ${safeBodyHtml}
+    </div>
+    <p style="margin:0;color:#64748b;font-size:14px;">
+      ${senderName ? `${escapeHtml(senderName)}<br />` : ''}
+      <strong style="color:#0f172a;">${escapeHtml(agency)}</strong>
+    </p>
+  `);
+
+  return sendMail({ to, subject: emailSubject, html, text });
+};
+
+/** Custom message from agency owner to an HR staff member */
+const sendHrCustomEmail = async ({
+  to,
+  hrName,
+  agencyName,
+  subject,
+  message,
+  senderName,
+}) => sendCustomMessageEmail({
+  to,
+  recipientName: hrName,
+  agencyName,
+  subject,
+  message,
+  senderName,
+});
+
+/** Custom message from agency owner/HR to a candidate */
+const sendCandidateCustomEmail = async ({
+  to,
+  candidateName,
+  agencyName,
+  subject,
+  message,
+  senderName,
+}) => sendCustomMessageEmail({
+  to,
+  recipientName: candidateName,
+  agencyName,
+  subject,
+  message,
+  senderName,
+});
+
 /** When an EVV enrollment form is assigned to a caregiver */
 const sendEvvEnrollmentAssignedEmail = async ({
   to,
@@ -817,6 +890,8 @@ module.exports = {
   sendCandidateRoundCompletedEmail,
   sendCaregiverWelcomeEmail,
   sendHrWelcomeEmail,
+  sendHrCustomEmail,
+  sendCandidateCustomEmail,
   sendEvvEnrollmentAssignedEmail,
   sendAgencyInvitationEmail,
   sendAgencyRegistrationWelcomeEmail,

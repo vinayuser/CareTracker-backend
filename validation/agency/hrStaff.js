@@ -62,4 +62,11 @@ module.exports = {
   updateStatus: Joi.object({
     status: Joi.string().valid('Active', 'Pending', 'Inactive').required(),
   }),
+  setPassword: Joi.object({
+    password: Joi.string().min(8).required(),
+  }),
+  sendEmail: Joi.object({
+    subject: Joi.string().trim().min(1).max(200).required(),
+    message: Joi.string().trim().min(1).max(5000).required(),
+  }),
 };

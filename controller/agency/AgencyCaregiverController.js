@@ -38,3 +38,33 @@ module.exports.setPassword = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.update = async (req, res, next) => {
+  try {
+    await Validation.Caregiver.update.validateAsync(req.body);
+    const data = await AgencyCaregiverService.update(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.CAREGIVER.UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.updateStatus = async (req, res, next) => {
+  try {
+    await Validation.Caregiver.updateStatus.validateAsync(req.body);
+    const data = await AgencyCaregiverService.updateStatus(req, req.params.id, req.body.status);
+    return res.success(constants.MESSAGE.CAREGIVER.STATUS_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.sendEmail = async (req, res, next) => {
+  try {
+    await Validation.Caregiver.sendEmail.validateAsync(req.body);
+    const data = await AgencyCaregiverService.sendEmail(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.CAREGIVER.EMAIL_SENT, data);
+  } catch (error) {
+    next(error);
+  }
+};

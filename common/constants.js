@@ -32,6 +32,8 @@ module.exports = {
       CREATED: 'HR Account Created Successfully',
       UPDATED: 'HR Profile Updated Successfully',
       STATUS_UPDATED: 'HR Account Status Updated Successfully',
+      PASSWORD_UPDATED: 'HR password updated successfully',
+      EMAIL_SENT: 'Email sent to HR staff successfully',
       NOT_FOUND: 'HR Staff Member Not Found',
       ALREADY_EXISTS: 'An HR staff member with this employee ID or email already exists',
     },
@@ -78,6 +80,8 @@ module.exports = {
       NO_PREVIOUS_STAGE: 'No previous stage available',
       JOB_HIRE_LIMIT: 'Only one candidate can be hired for this job',
       CAREGIVER_ACCOUNT_CONFLICT: 'Email is already used by a non-caregiver account',
+      EMAIL_SENT: 'Email sent to candidate',
+      EMAIL_MISSING: 'Candidate email not found',
     },
     CANDIDATE_FORM: {
       INVALID_TOKEN: 'This form link is invalid or has been revoked',
@@ -106,6 +110,11 @@ module.exports = {
     CAREGIVER: {
       NOT_FOUND: 'Caregiver not found',
       PASSWORD_UPDATED: 'Caregiver password updated successfully',
+      UPDATED: 'Caregiver updated successfully',
+      STATUS_UPDATED: 'Caregiver status updated',
+      EMAIL_SENT: 'Email sent to caregiver',
+      EMAIL_MISSING: 'Caregiver email not found',
+      USER_ID_TAKEN: 'Login ID or email is already in use',
     },
     CLIENT: {
       CREATED: 'Client created successfully',

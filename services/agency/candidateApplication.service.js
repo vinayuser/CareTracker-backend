@@ -9,6 +9,7 @@ const {
   sendCandidateApplicationEmail,
   sendCaregiverWelcomeEmail,
   sendCandidateRoundCompletedEmail,
+  sendCandidateCustomEmail,
 } = require('../common/mail.service');
 
 const formatApplicationPopulated = (app) => {
@@ -816,6 +817,34 @@ const getHiredForJob = async (req, jobId) => {
   }));
 };
 
+const sendEmail = async (req, applicationId, payload) => {
+  const agencyId = getAgencyId(req);
+  const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId })
+    .populate('candidateId');
+  if (!app) throw new Error(constants.MESSAGE.CANDIDATE.APPLICATION_NOT_FOUND);
+
+  const candidate = app.candidateId;
+  if (!candidate?.email) throw new Error(constants.MESSAGE.CANDIDATE.EMAIL_MISSING);
+
+  const agency = await Model.AgencyModel.findById(agencyId).select('name');
+  const sender = req.agency_owner || req.hr;
+
+  await sendCandidateCustomEmail({
+    to: candidate.email,
+    candidateName: `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim(),
+    agencyName: agency?.name,
+    subject: payload.subject,
+    message: payload.message,
+    senderName: sender?.fullName || sender?.name || '',
+  });
+
+  return {
+    id: String(app._id),
+    email: candidate.email,
+    subject: payload.subject,
+  };
+};
+
 module.exports = {
   applyForJob,
   getAllApplications,
@@ -832,6 +861,7 @@ module.exports = {
   reopenJobHiring,
   getStats,
   getHiredForJob,
+  sendEmail,
   formatCandidate,
   formatApplication,
 };
