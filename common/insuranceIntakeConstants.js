@@ -110,12 +110,12 @@ const buildEmptyFormData = () => ({
     date: '',
   },
   requiredDocuments: {
-    insuranceCard: false,
-    photoId: false,
-    medicareCard: false,
-    medicaidCard: false,
-    prescriptionCard: false,
-    otherDocuments: false,
+    insuranceCard: null,
+    photoId: null,
+    medicareCard: null,
+    medicaidCard: null,
+    prescriptionCard: null,
+    otherDocuments: null,
   },
   officeUse: {
     verifiedBy: '',

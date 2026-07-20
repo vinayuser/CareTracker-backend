@@ -151,6 +151,10 @@ module.exports = {
       UPDATED: 'Insurance intake updated successfully',
       DELETED: 'Insurance intake deleted successfully',
       NOT_FOUND: 'Insurance intake not found',
+      DOCUMENT_UPLOADED: 'Document uploaded successfully',
+      DOCUMENT_REMOVED: 'Document removed successfully',
+      DOCUMENT_INVALID: 'Invalid document type',
+      DOCUMENTS_EMPTY: 'No documents available to download',
     },
     EVV_ENROLLMENT: {
       UPDATED: 'EVV enrollment updated successfully',

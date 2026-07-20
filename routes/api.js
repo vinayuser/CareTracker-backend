@@ -134,6 +134,22 @@ router.get('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'h
 router.post('/agency/insurance-intakes', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.create);
 router.put('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.update);
 router.delete('/agency/insurance-intakes/:id', Auth.authenticate('agency_owner', 'hr'), Controller.InsuranceIntakeController.remove);
+router.post(
+  '/agency/insurance-intakes/:id/documents/:docKey',
+  Auth.authenticate('agency_owner', 'hr'),
+  require('../middleware/insuranceIntakeUpload').uploadDocument,
+  Controller.InsuranceIntakeController.uploadDocument,
+);
+router.delete(
+  '/agency/insurance-intakes/:id/documents/:docKey',
+  Auth.authenticate('agency_owner', 'hr'),
+  Controller.InsuranceIntakeController.removeDocument,
+);
+router.get(
+  '/agency/insurance-intakes/:id/documents/download',
+  Auth.authenticate('agency_owner', 'hr'),
+  Controller.InsuranceIntakeController.downloadDocuments,
+);
 
 router.get('/agency/evv-enrollments/options', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getOptions);
 router.get('/agency/evv-enrollments/stats', Auth.authenticate('agency_owner', 'hr'), Controller.EvvEnrollmentController.getStats);

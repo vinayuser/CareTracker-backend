@@ -66,3 +66,29 @@ module.exports.remove = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.uploadDocument = async (req, res, next) => {
+  try {
+    const data = await InsuranceIntakeService.uploadDocument(req, req.params.id, req.params.docKey);
+    return res.success(constants.MESSAGE.INSURANCE_INTAKE.DOCUMENT_UPLOADED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.removeDocument = async (req, res, next) => {
+  try {
+    const data = await InsuranceIntakeService.removeDocument(req, req.params.id, req.params.docKey);
+    return res.success(constants.MESSAGE.INSURANCE_INTAKE.DOCUMENT_REMOVED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.downloadDocuments = async (req, res, next) => {
+  try {
+    await InsuranceIntakeService.streamDocumentsZip(req, res, req.params.id);
+  } catch (error) {
+    next(error);
+  }
+};
