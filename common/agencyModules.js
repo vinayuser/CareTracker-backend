@@ -8,6 +8,7 @@ const MODULE_GROUPS = [
   {
     title: 'Client Management',
     keys: [
+      'AGENCY_LEADS',
       'AGENCY_ASSESSMENTS',
       'AGENCY_CLIENTS',
       'AGENCY_CARE_PLANS',
@@ -42,6 +43,7 @@ const MODULE_GROUPS = [
 
 const MODULE_LABELS = {
   AGENCY_DASHBOARD: 'Dashboard',
+  AGENCY_LEADS: 'Leads',
   AGENCY_CLIENTS: 'Clients',
   AGENCY_INSURANCE_INTAKE: 'Insurance Intake',
   AGENCY_ASSESSMENTS: 'Assessments',

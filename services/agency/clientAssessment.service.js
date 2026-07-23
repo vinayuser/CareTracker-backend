@@ -244,6 +244,7 @@ const create = async (req, payload) => {
     assessmentTypes: payload.assessmentTypes || [],
     formData: payload.formData,
     status: payload.status || 'Enquiry',
+    clientId: payload.clientId || null,
     ...summary,
     createdByAccountId: getAccountId(req),
   });

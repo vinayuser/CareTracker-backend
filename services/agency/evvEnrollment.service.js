@@ -3,7 +3,16 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const evvConstants = require('../../common/evvEnrollmentConstants');
 const { formatClient } = require('./client.service');
-const { sendEvvEnrollmentAssignedEmail } = require('../common/mail.service');
+const {
+  sendEvvEnrollmentAssignedEmail,
+  sendEvvEnrollmentSubmittedEmail,
+  sendEvvEnrollmentSubmitConfirmationEmail,
+} = require('../common/mail.service');
+const {
+  getAgencyContext,
+  uniqueEmails,
+  agencyPortalUrl,
+} = require('../common/notifyHelpers');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -176,6 +185,8 @@ const formatEvvEnrollment = (doc, extras = {}) => {
   item.carePlanId = String(doc.carePlanId?._id || doc.carePlanId || '');
   item.clientId = String(doc.clientId?._id || doc.clientId || '');
   item.caregiverAccountId = String(doc.caregiverAccountId?._id || doc.caregiverAccountId || '');
+  item.serviceAreaKey = doc.serviceAreaKey || '';
+  item.serviceAreas = Array.isArray(doc.serviceAreas) ? doc.serviceAreas : [];
   if (extras.client) {
     item.client = typeof extras.client === 'object' && extras.client.firstName
       ? formatClient(extras.client)
@@ -192,47 +203,84 @@ const generateEnrollmentCode = async (agencyId) => {
   return `EVV-${String(10001 + count).padStart(5, '0')}`;
 };
 
+/** One enrollment per care-need (service) assignment — not one per caregiver. */
 const extractAssignments = (formData = {}) => {
-  const careNeeds = formData.careNeeds || [];
-  const assignments = new Map();
+  const assignments = [];
+  const seen = new Set();
 
-  careNeeds.forEach((need) => {
+  (formData.careNeeds || []).forEach((need) => {
     const staffId = need.responsibleStaffId;
     if (!staffId) return;
-    const key = String(staffId);
-    if (!assignments.has(key)) {
-      assignments.set(key, { caregiverAccountId: staffId, serviceAreas: [], frequencies: [] });
-    }
-    const entry = assignments.get(key);
-    if (need.areaLabel) entry.serviceAreas.push(need.areaLabel);
-    if (need.frequency) entry.frequencies.push(need.frequency);
+    const areaKey = String(need.areaKey || need.areaLabel || '').trim();
+    if (!areaKey) return;
+    const key = `${String(staffId)}::${areaKey}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    assignments.push({
+      key,
+      caregiverAccountId: String(staffId),
+      serviceAreaKey: areaKey,
+      serviceAreas: [need.areaLabel || areaKey],
+      frequencies: need.frequency ? [need.frequency] : [],
+    });
   });
 
   return assignments;
 };
 
+const ensurePerServiceEnrollmentIndex = async () => {
+  try {
+    await Model.EvvEnrollmentModel.collection.dropIndex('agencyId_1_carePlanId_1_caregiverAccountId_1');
+  } catch (_) {
+    /* old unique index may already be gone */
+  }
+  try {
+    await Model.EvvEnrollmentModel.syncIndexes();
+  } catch (err) {
+    console.error('[evvEnrollment] syncIndexes failed', err.message);
+  }
+};
+
+let indexReadyPromise = null;
+const readyEnrollmentIndexes = () => {
+  if (!indexReadyPromise) indexReadyPromise = ensurePerServiceEnrollmentIndex();
+  return indexReadyPromise;
+};
+
 const syncFromCarePlan = async (agencyId, carePlanDoc) => {
+  await readyEnrollmentIndexes();
+
   const clientId = carePlanDoc.clientId?._id || carePlanDoc.clientId;
   if (!clientId) return [];
 
   const assignments = extractAssignments(carePlanDoc.formData || {});
-  if (assignments.size === 0) return [];
+  if (assignments.length === 0) return [];
 
   const client = await Model.ClientModel.findOne({ _id: clientId, agencyId });
   const agency = await Model.AgencyModel.findById(agencyId);
   if (!client) return [];
 
-  const activeIds = [...assignments.keys()];
+  const activeKeys = new Set(assignments.map((a) => a.key));
 
-  await Model.EvvEnrollmentModel.deleteMany({
+  // Remove pending forms for assignments that no longer exist (or legacy combined forms)
+  const pendingDocs = await Model.EvvEnrollmentModel.find({
     agencyId,
     carePlanId: carePlanDoc._id,
     status: 'Pending',
-    caregiverAccountId: { $nin: activeIds },
   });
+  for (const doc of pendingDocs) {
+    const cgId = String(doc.caregiverAccountId);
+    const areaKey = doc.serviceAreaKey || '';
+    const key = areaKey ? `${cgId}::${areaKey}` : '';
+    const isLegacyCombined = !areaKey;
+    if (isLegacyCombined || !activeKeys.has(key)) {
+      await Model.EvvEnrollmentModel.deleteOne({ _id: doc._id });
+    }
+  }
 
   const results = [];
-  for (const [caregiverId, assignment] of assignments) {
+  for (const assignment of assignments) {
+    const caregiverId = assignment.caregiverAccountId;
     const caregiver = await Model.AgencyAccountModel.findOne({
       _id: caregiverId,
       agencyId,
@@ -254,7 +302,10 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       agencyId,
       carePlanId: carePlanDoc._id,
       caregiverAccountId: caregiverId,
+      serviceAreaKey: assignment.serviceAreaKey,
     });
+
+    const serviceLabel = (assignment.serviceAreas || []).join(', ') || assignment.serviceAreaKey;
 
     if (!enrollment) {
       enrollment = await Model.EvvEnrollmentModel.create({
@@ -263,6 +314,7 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
         carePlanId: carePlanDoc._id,
         clientId,
         caregiverAccountId: caregiverId,
+        serviceAreaKey: assignment.serviceAreaKey,
         planCode: carePlanDoc.planCode || '',
         clientName: `${client.firstName} ${client.lastName}`.trim(),
         caregiverName: caregiver.fullName || '',
@@ -281,6 +333,7 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
             caregiverName: caregiver.fullName || 'Caregiver',
             agencyName: agency?.name,
             clientName: enrollment.clientName,
+            serviceName: serviceLabel,
             enrollmentCode: enrollment.enrollmentCode,
             formUrl,
           });
@@ -292,6 +345,7 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       enrollment.planCode = carePlanDoc.planCode || '';
       enrollment.clientName = `${client.firstName} ${client.lastName}`.trim();
       enrollment.caregiverName = caregiver.fullName || '';
+      enrollment.serviceAreaKey = assignment.serviceAreaKey;
       enrollment.serviceAreas = assignment.serviceAreas;
       enrollment.formData = {
         ...prefill,
@@ -351,6 +405,8 @@ const getAll = async (req, query = {}) => {
       { clientName: regex },
       { caregiverName: regex },
       { planCode: regex },
+      { serviceAreas: regex },
+      { serviceAreaKey: regex },
     ];
   }
 
@@ -529,7 +585,84 @@ const submitCaregiver = async (req, id, payload) => {
   const populated = await Model.EvvEnrollmentModel.findById(doc._id)
     .populate('clientId')
     .populate('carePlanId');
-  return formatEvvEnrollment(populated, { client: populated.clientId, carePlan: populated.carePlanId });
+
+  const result = formatEvvEnrollment(populated, {
+    client: populated.clientId,
+    carePlan: populated.carePlanId,
+  });
+
+  // Fire-and-forget emails so submit response is not blocked by SMTP
+  const notifyPayload = {
+    agencyId: String(agencyId),
+    enrollmentId: String(populated._id),
+    enrollmentCode: populated.enrollmentCode,
+    clientName: populated.clientName
+      || (populated.clientId
+        ? `${populated.clientId.firstName || ''} ${populated.clientId.lastName || ''}`.trim()
+        : ''),
+    caregiverName: populated.caregiverName
+      || caregiver.fullName
+      || caregiver.name
+      || 'Caregiver',
+    caregiverEmail: caregiver.email
+      || populated.formData?.caregiverInfo?.email
+      || populated.formData?.mobileEnrollment?.email
+      || '',
+    reviewUrl: agencyPortalUrl(req, `/agency/evv/enrollments/${populated._id}/review`),
+    portalUrl: `${functions.getFrontendUrl()}/caregiver/evv-enrollments/${populated._id}`,
+  };
+
+  setImmediate(() => {
+    notifyEvvEnrollmentSubmitted(notifyPayload).catch((err) => {
+      console.error('[evvEnrollment] background submit notify failed', err.message);
+    });
+  });
+
+  return result;
+};
+
+const notifyEvvEnrollmentSubmitted = async ({
+  agencyId,
+  enrollmentCode,
+  clientName,
+  caregiverName,
+  caregiverEmail,
+  reviewUrl,
+  portalUrl,
+}) => {
+  const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+  const emails = uniqueEmails(ownerEmails);
+
+  await Promise.all(emails.map(async (to) => {
+    try {
+      await sendEvvEnrollmentSubmittedEmail({
+        to,
+        recipientName: ownerName || agencyName || 'Agency',
+        agencyName,
+        caregiverName,
+        clientName,
+        enrollmentCode,
+        reviewUrl,
+      });
+    } catch (err) {
+      console.error('[evvEnrollment] submit notify failed', to, err.message);
+    }
+  }));
+
+  if (caregiverEmail) {
+    try {
+      await sendEvvEnrollmentSubmitConfirmationEmail({
+        to: caregiverEmail,
+        caregiverName,
+        agencyName,
+        clientName,
+        enrollmentCode,
+        portalUrl,
+      });
+    } catch (err) {
+      console.error('[evvEnrollment] caregiver submit confirmation failed', err.message);
+    }
+  }
 };
 
 module.exports = {

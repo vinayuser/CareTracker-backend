@@ -10,6 +10,14 @@ const {
   VISIT_STATUSES,
   VISIT_APPROVAL_STATUSES,
 } = require('../../common/visitScheduleConstants');
+const {
+  TIMEZONES,
+  DEFAULT_TIMEZONE,
+  addDaysToDateKey,
+  dateKeyInZone,
+  zonedTimeToUtc,
+  weekdayShortInZone,
+} = require('../../common/timezone');
 
 const DEFAULT_HORIZON_DAYS = 42;
 const LATE_EXTRA_MS = LATE_CHECK_IN_EXTRA_MINUTES * 60 * 1000;
@@ -45,17 +53,43 @@ const getCaregiverAgencyId = (req) => {
   return agencyId;
 };
 
-const pad2 = (n) => String(n).padStart(2, '0');
-
-const toDateKey = (date) => {
-  const d = date instanceof Date ? date : new Date(date);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const resolveTimezone = (tz) => {
+  const value = String(tz || '').trim();
+  if (!value) return DEFAULT_TIMEZONE;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return value;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
 };
 
-const parseTimeOnDate = (dateKey, hhmm) => {
-  const [h, m] = String(hhmm || '00:00').split(':').map((x) => Number(x) || 0);
-  const [y, mo, d] = dateKey.split('-').map(Number);
-  return new Date(y, mo - 1, d, h, m, 0, 0);
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** Local calendar date key in a timezone (prefer visit/schedule zone). */
+const toDateKey = (date, timeZone = DEFAULT_TIMEZONE) => dateKeyInZone(date, timeZone);
+
+const getOptions = () => ({
+  recurrence_types: RECURRENCE_TYPES,
+  grace_minutes: GRACE_MINUTES,
+  week_days: WEEK_DAYS,
+  schedule_statuses: SCHEDULE_STATUSES,
+  visit_statuses: VISIT_STATUSES,
+  approval_statuses: VISIT_APPROVAL_STATUSES,
+  late_check_in_extra_minutes: LATE_CHECK_IN_EXTRA_MINUTES,
+  timezones: TIMEZONES,
+  default_timezone: DEFAULT_TIMEZONE,
+});
+
+const formatSchedule = (doc) => {
+  const item = functions.toClientDoc(doc);
+  if (!item) return null;
+  item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
+  item.carePlanId = String(doc.carePlanId?._id || doc.carePlanId || '');
+  item.clientId = String(doc.clientId?._id || doc.clientId || '');
+  item.caregiverAccountId = String(doc.caregiverAccountId?._id || doc.caregiverAccountId || '');
+  item.timezone = resolveTimezone(doc.timezone);
+  return item;
 };
 
 const formatAddress = (client) => {
@@ -73,26 +107,6 @@ const generateScheduleCode = async (agencyId) => {
 const generateVisitCode = async (agencyId) => {
   const count = await Model.VisitModel.countDocuments({ agencyId });
   return `VST-${String(10001 + count).padStart(5, '0')}`;
-};
-
-const getOptions = () => ({
-  recurrence_types: RECURRENCE_TYPES,
-  grace_minutes: GRACE_MINUTES,
-  week_days: WEEK_DAYS,
-  schedule_statuses: SCHEDULE_STATUSES,
-  visit_statuses: VISIT_STATUSES,
-  approval_statuses: VISIT_APPROVAL_STATUSES,
-  late_check_in_extra_minutes: LATE_CHECK_IN_EXTRA_MINUTES,
-});
-
-const formatSchedule = (doc) => {
-  const item = functions.toClientDoc(doc);
-  if (!item) return null;
-  item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
-  item.carePlanId = String(doc.carePlanId?._id || doc.carePlanId || '');
-  item.clientId = String(doc.clientId?._id || doc.clientId || '');
-  item.caregiverAccountId = String(doc.caregiverAccountId?._id || doc.caregiverAccountId || '');
-  return item;
 };
 
 const haversineMeters = (lat1, lng1, lat2, lng2) => {
@@ -150,6 +164,8 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
   item.approvedBy = item.approvedBy ? String(item.approvedBy) : null;
   item.liveElapsedSeconds = computeLiveElapsedSeconds(doc, now);
   item.isTimerRunning = Boolean(doc.isTimerRunning);
+  item.timezone = resolveTimezone(doc.timezone);
+  item.canEditLog = !item.isTimerRunning && item.status !== 'Cancelled';
   item.billableHours = item.billableMinutes != null
     ? Number((Number(item.billableMinutes) / 60).toFixed(2))
     : null;
@@ -171,12 +187,12 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
   return item;
 };
 
-const occursOnDate = (schedule, date) => {
-  const key = toDateKey(date);
-  if (key < schedule.effectiveFrom) return false;
-  if (schedule.effectiveTo && key > schedule.effectiveTo) return false;
+const occursOnDateKey = (schedule, dateKey) => {
+  if (dateKey < schedule.effectiveFrom) return false;
+  if (schedule.effectiveTo && dateKey > schedule.effectiveTo) return false;
 
-  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+  const tz = resolveTimezone(schedule.timezone);
+  const dow = weekdayShortInZone(dateKey, tz);
 
   if (schedule.recurrenceType === 'Daily') return true;
   if (schedule.recurrenceType === 'Weekly') {
@@ -185,17 +201,33 @@ const occursOnDate = (schedule, date) => {
   }
   if (schedule.recurrenceType === 'Monthly') {
     const day = schedule.dayOfMonth || Number(schedule.effectiveFrom.slice(8, 10));
-    return date.getDate() === day;
+    return Number(dateKey.slice(8, 10)) === day;
   }
   return false;
 };
 
-const buildVisitPayload = (schedule, dateKey, visitCode) => {
-  const startAt = parseTimeOnDate(dateKey, schedule.startTime);
-  const endAt = parseTimeOnDate(dateKey, schedule.endTime);
-  if (endAt <= startAt) endAt.setDate(endAt.getDate() + 1);
+const buildVisitWindow = (schedule, dateKey) => {
+  const tz = resolveTimezone(schedule.timezone);
+  const startAt = zonedTimeToUtc(dateKey, schedule.startTime, tz);
+  let endAt = zonedTimeToUtc(dateKey, schedule.endTime, tz);
+  if (endAt <= startAt) {
+    endAt = zonedTimeToUtc(addDaysToDateKey(dateKey, 1), schedule.endTime, tz);
+  }
   const graceMs = (schedule.graceMinutes || 15) * 60 * 1000;
   const latestCheckInAt = new Date(startAt.getTime() + graceMs);
+  return {
+    timezone: tz,
+    scheduledStartAt: startAt,
+    scheduledEndAt: endAt,
+    earliestCheckInAt: new Date(startAt.getTime() - graceMs),
+    latestCheckInAt,
+    lateCheckInUntil: new Date(latestCheckInAt.getTime() + LATE_EXTRA_MS),
+    graceMinutes: schedule.graceMinutes || 15,
+  };
+};
+
+const buildVisitPayload = (schedule, dateKey, visitCode) => {
+  const window = buildVisitWindow(schedule, dateKey);
   return {
     agencyId: schedule.agencyId,
     visitCode,
@@ -204,35 +236,63 @@ const buildVisitPayload = (schedule, dateKey, visitCode) => {
     clientId: schedule.clientId,
     caregiverAccountId: schedule.caregiverAccountId,
     serviceArea: schedule.serviceArea || '',
+    careNeedAreaKey: schedule.careNeedAreaKey || '',
     clientName: schedule.clientName || '',
     caregiverName: schedule.caregiverName || '',
     address: schedule.address || '',
     addressLat: schedule.addressLat ?? null,
     addressLng: schedule.addressLng ?? null,
+    timezone: window.timezone,
     scheduledDate: dateKey,
-    scheduledStartAt: startAt,
-    scheduledEndAt: endAt,
-    earliestCheckInAt: new Date(startAt.getTime() - graceMs),
-    latestCheckInAt,
-    lateCheckInUntil: new Date(latestCheckInAt.getTime() + LATE_EXTRA_MS),
-    graceMinutes: schedule.graceMinutes || 15,
+    scheduledStartAt: window.scheduledStartAt,
+    scheduledEndAt: window.scheduledEndAt,
+    earliestCheckInAt: window.earliestCheckInAt,
+    latestCheckInAt: window.latestCheckInAt,
+    lateCheckInUntil: window.lateCheckInUntil,
+    graceMinutes: window.graceMinutes,
     status: 'Scheduled',
   };
+};
+
+/** Recompute UTC windows for future Scheduled visits after time/timezone edits */
+const refreshFutureVisitWindows = async (schedule) => {
+  const tz = resolveTimezone(schedule.timezone);
+  const todayKey = dateKeyInZone(new Date(), tz);
+  const visits = await Model.VisitModel.find({
+    scheduleId: schedule._id,
+    status: { $in: ['Scheduled', 'Late'] },
+    scheduledDate: { $gte: todayKey },
+    checkInAt: null,
+  });
+  for (const visit of visits) {
+    const window = buildVisitWindow(schedule, visit.scheduledDate);
+    visit.timezone = window.timezone;
+    visit.scheduledStartAt = window.scheduledStartAt;
+    visit.scheduledEndAt = window.scheduledEndAt;
+    visit.earliestCheckInAt = window.earliestCheckInAt;
+    visit.latestCheckInAt = window.latestCheckInAt;
+    visit.lateCheckInUntil = window.lateCheckInUntil;
+    visit.graceMinutes = window.graceMinutes;
+    await visit.save();
+  }
+  return visits.length;
 };
 
 const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HORIZON_DAYS } = {}) => {
   if (!schedule || schedule.status !== 'Active') return { created: 0, visits: [] };
 
-  const start = fromDate ? new Date(fromDate) : new Date();
-  start.setHours(0, 0, 0, 0);
+  const tz = resolveTimezone(schedule.timezone);
+  const startKey = fromDate
+    ? (typeof fromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)
+      ? fromDate
+      : dateKeyInZone(fromDate, tz))
+    : dateKeyInZone(new Date(), tz);
   const created = [];
 
   for (let i = 0; i < days; i += 1) {
-    const cursor = new Date(start);
-    cursor.setDate(start.getDate() + i);
-    if (!occursOnDate(schedule, cursor)) continue;
+    const dateKey = addDaysToDateKey(startKey, i);
+    if (!occursOnDateKey(schedule, dateKey)) continue;
 
-    const dateKey = toDateKey(cursor);
     const existing = await Model.VisitModel.findOne({
       scheduleId: schedule._id,
       scheduledDate: dateKey,
@@ -271,13 +331,31 @@ const markMissedVisits = async (agencyId) => {
   if (ops.length) await Model.VisitModel.bulkWrite(ops);
 };
 
-const assertVerifiedEnrollment = async (agencyId, caregiverAccountId, carePlanId) => {
-  const enrollment = await Model.EvvEnrollmentModel.findOne({
+const assertVerifiedEnrollment = async (agencyId, caregiverAccountId, carePlanId, careNeedAreaKey = '') => {
+  const base = {
     agencyId,
     caregiverAccountId,
     carePlanId,
     status: 'Verified',
-  });
+  };
+
+  let enrollment = null;
+  if (careNeedAreaKey) {
+    enrollment = await Model.EvvEnrollmentModel.findOne({
+      ...base,
+      serviceAreaKey: careNeedAreaKey,
+    });
+    // Legacy combined enrollments (no per-service key) still count
+    if (!enrollment) {
+      enrollment = await Model.EvvEnrollmentModel.findOne({
+        ...base,
+        $or: [{ serviceAreaKey: '' }, { serviceAreaKey: null }, { serviceAreaKey: { $exists: false } }],
+      });
+    }
+  } else {
+    enrollment = await Model.EvvEnrollmentModel.findOne(base);
+  }
+
   if (!enrollment) {
     throw new Error(constants.MESSAGE.VISIT.EVV_NOT_VERIFIED);
   }
@@ -332,7 +410,7 @@ const createSchedule = async (req, payload) => {
     startTime: payload.start_time,
     endTime: payload.end_time,
     graceMinutes,
-    timezone: payload.timezone || 'America/New_York',
+    timezone: resolveTimezone(payload.timezone),
     effectiveFrom: payload.effective_from,
     effectiveTo: payload.effective_to || '',
     status: payload.status || 'Active',
@@ -381,6 +459,9 @@ const updateSchedule = async (req, id, payload) => {
   if (payload.grace_minutes != null) {
     schedule.graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
   }
+  if (payload.timezone !== undefined) {
+    schedule.timezone = resolveTimezone(payload.timezone);
+  }
   if (payload.effective_from) schedule.effectiveFrom = payload.effective_from;
   if (payload.effective_to !== undefined) schedule.effectiveTo = payload.effective_to || '';
   if (payload.service_area !== undefined) schedule.serviceArea = payload.service_area || '';
@@ -392,6 +473,11 @@ const updateSchedule = async (req, id, payload) => {
 
   await schedule.save();
 
+  let refreshed = 0;
+  if (['Active', 'Paused'].includes(schedule.status)) {
+    refreshed = await refreshFutureVisitWindows(schedule);
+  }
+
   let generated = { created: 0 };
   if (schedule.status === 'Active') {
     generated = await generateVisitsForSchedule(schedule);
@@ -400,6 +486,7 @@ const updateSchedule = async (req, id, payload) => {
   return {
     schedule: formatSchedule(schedule),
     generated_visits: generated.created,
+    refreshed_visits: refreshed,
   };
 };
 
@@ -574,7 +661,12 @@ const checkInVisit = async (req, visitId, payload = {}) => {
     throw new Error(constants.MESSAGE.VISIT.TIMER_ACTIVE_ELSEWHERE);
   }
 
-  await assertVerifiedEnrollment(agencyId, visit.caregiverAccountId, visit.carePlanId);
+  await assertVerifiedEnrollment(
+    agencyId,
+    visit.caregiverAccountId,
+    visit.carePlanId,
+    visit.careNeedAreaKey || '',
+  );
 
   const now = new Date();
   if (now < visit.earliestCheckInAt) {
@@ -858,6 +950,135 @@ const resolveVisitException = async (req, visitId, payload = {}) => {
       note: visit.exceptionResolutionNote,
     },
   ];
+  await visit.save();
+  return formatVisit(visit);
+};
+
+const parseAgencyDateTime = (value, timeZone) => {
+  if (value == null || value === '') return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) throw new Error(constants.MESSAGE.VISIT.LOG_TIMES_REQUIRED);
+    return d;
+  }
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/);
+  if (m) return zonedTimeToUtc(m[1], m[2], timeZone);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) throw new Error(constants.MESSAGE.VISIT.LOG_TIMES_REQUIRED);
+  return d;
+};
+
+/** Agency correction of Missed / completed visit times (approve optional). */
+const updateVisitLog = async (req, visitId, payload = {}) => {
+  const agencyId = getAgencyId(req);
+  const reviewer = getAgencyAccount(req);
+  const visit = await Model.VisitModel.findOne({ _id: visitId, agencyId });
+  if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+  if (visit.isTimerRunning || visit.status === 'Cancelled') {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_LOG_EDIT);
+  }
+  if (!payload.check_in_at || !payload.check_out_at) {
+    throw new Error(constants.MESSAGE.VISIT.LOG_TIMES_REQUIRED);
+  }
+
+  const tz = resolveTimezone(visit.timezone);
+  const checkInAt = parseAgencyDateTime(payload.check_in_at, tz);
+  const checkOutAt = parseAgencyDateTime(payload.check_out_at, tz);
+  if (!checkInAt || !checkOutAt) {
+    throw new Error(constants.MESSAGE.VISIT.LOG_TIMES_REQUIRED);
+  }
+  if (checkOutAt <= checkInAt) {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_LOG_TIMES);
+  }
+
+  const prevIn = visit.checkInAt ? new Date(visit.checkInAt).toISOString() : null;
+  const prevOut = visit.checkOutAt ? new Date(visit.checkOutAt).toISOString() : null;
+
+  visit.checkInAt = checkInAt;
+  visit.checkOutAt = checkOutAt;
+  visit.isTimerRunning = false;
+  visit.lastSegmentStartAt = null;
+
+  if (!visit.checkInMethod) visit.checkInMethod = 'Agency Edit';
+  else if (visit.checkInMethod !== 'Agency Edit' && prevIn !== checkInAt.toISOString()) {
+    visit.checkInMethod = `${visit.checkInMethod} (edited)`;
+  }
+  if (!visit.checkOutMethod) visit.checkOutMethod = 'Agency Edit';
+  else if (visit.checkOutMethod !== 'Agency Edit' && prevOut !== checkOutAt.toISOString()) {
+    visit.checkOutMethod = `${visit.checkOutMethod} (edited)`;
+  }
+
+  const secs = Math.max(0, Math.floor((checkOutAt.getTime() - checkInAt.getTime()) / 1000));
+  visit.elapsedSeconds = secs;
+  visit.billableSeconds = secs;
+  visit.billableMinutes = Math.max(1, Math.round(secs / 60));
+
+  if (!visit.hourlyRateSnapshot) {
+    visit.hourlyRateSnapshot = await resolveHourlyRate(visit.carePlanId);
+  }
+  visit.amountSnapshot = Number(
+    (((visit.billableMinutes || 0) / 60) * (visit.hourlyRateSnapshot || 0)).toFixed(2),
+  );
+
+  const latest = visit.latestCheckInAt ? new Date(visit.latestCheckInAt) : null;
+  if (payload.clear_late) {
+    visit.lateCheckIn = false;
+    visit.exceptionReason = '';
+  } else if (latest && checkInAt > latest) {
+    visit.lateCheckIn = true;
+    if (!visit.exceptionReason) {
+      visit.exceptionReason = `Checked in after ${visit.graceMinutes || 15}-minute grace window`;
+    }
+  } else {
+    visit.lateCheckIn = false;
+  }
+
+  visit.status = visit.lateCheckIn ? 'Exception' : 'Completed';
+
+  if (payload.notes != null) {
+    visit.notes = String(payload.notes || '');
+  }
+
+  const shouldApprove = Boolean(payload.approve);
+  if (shouldApprove) {
+    visit.approvalStatus = 'Approved';
+    visit.approvedBy = reviewer?._id || reviewer?.id || null;
+    visit.approvedByName = resolveReviewerName(reviewer);
+    visit.approvedAt = new Date();
+    visit.rejectionReason = '';
+    visit.exceptionResolved = true;
+    visit.exceptionResolutionNote = payload.notes || 'Corrected and approved by agency';
+  } else if (!visit.approvalStatus || visit.approvalStatus === 'None') {
+    visit.approvalStatus = 'Pending';
+  } else if (visit.approvalStatus === 'Rejected') {
+    // Re-open for review after agency correction
+    visit.approvalStatus = 'Pending';
+    visit.rejectionReason = '';
+    visit.approvedAt = null;
+  }
+
+  visit.exceptionAudit = [
+    ...(visit.exceptionAudit || []),
+    {
+      at: new Date(),
+      byAccountId: reviewer?._id || reviewer?.id || null,
+      byName: resolveReviewerName(reviewer),
+      action: shouldApprove ? 'log_edit_approve' : 'log_edit',
+      note: [
+        `Times set ${checkInAt.toISOString()} → ${checkOutAt.toISOString()}`,
+        payload.notes ? String(payload.notes) : '',
+      ].filter(Boolean).join(' · '),
+    },
+  ];
+
+  visit.clockLogs = [
+    ...(visit.clockLogs || []),
+    { type: 'clock-in', at: checkInAt, note: 'Agency log edit' },
+    { type: 'clock-out', at: checkOutAt, note: 'Agency log edit' },
+  ];
+
   await visit.save();
   return formatVisit(visit);
 };
@@ -1322,6 +1543,7 @@ module.exports = {
   approveVisit,
   rejectVisit,
   resolveVisitException,
+  updateVisitLog,
   regenerateScheduleVisits,
   generateVisitsForSchedule,
   getEvvDashboard,

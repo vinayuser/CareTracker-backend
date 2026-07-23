@@ -167,6 +167,16 @@ module.exports.resolveException = async (req, res, next) => {
   }
 };
 
+module.exports.updateVisitLog = async (req, res, next) => {
+  try {
+    await Validation.VisitSchedule.updateLog.validateAsync(req.body || {});
+    const data = await VisitScheduleService.updateVisitLog(req, req.params.id, req.body || {});
+    return res.success(constants.MESSAGE.VISIT.LOG_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.approveVisit = async (req, res, next) => {
   try {
     await Validation.VisitSchedule.approve.validateAsync(req.body || {});

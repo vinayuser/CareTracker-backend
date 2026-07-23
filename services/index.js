@@ -12,6 +12,7 @@ module.exports.InterviewFeedbackService = require('./agency/interviewFeedback.se
 module.exports.AiJobContentService = require('./agency/aiJobContent.service');
 module.exports.AgencyCaregiverService = require('./agency/agencyCaregiver.service');
 module.exports.ClientService = require('./agency/client.service');
+module.exports.LeadService = require('./agency/lead.service');
 module.exports.ClientAssessmentService = require('./agency/clientAssessment.service');
 module.exports.CarePlanService = require('./agency/carePlan.service');
 module.exports.InsuranceIntakeService = require('./agency/insuranceIntake.service');

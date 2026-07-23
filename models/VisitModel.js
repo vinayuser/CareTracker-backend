@@ -32,9 +32,12 @@ const VisitSchema = new mongoose.Schema(
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true, index: true },
     caregiverAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', required: true, index: true },
     serviceArea: { type: String, default: '' },
+    careNeedAreaKey: { type: String, default: '' },
     clientName: { type: String, default: '' },
     caregiverName: { type: String, default: '' },
     address: { type: String, default: '' },
+    /** IANA timezone used when this visit window was built (wall clock ↔ UTC). */
+    timezone: { type: String, default: 'America/New_York' },
     /** Optional home coords for geofence (copied from client when available). */
     addressLat: { type: Number, default: null },
     addressLng: { type: Number, default: null },

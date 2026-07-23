@@ -475,17 +475,18 @@ const sendEvvEnrollmentAssignedEmail = async ({
   caregiverName,
   agencyName,
   clientName,
+  serviceName,
   enrollmentCode,
   formUrl,
 }) => {
   const agency = agencyName || 'Your agency';
-  const subject = `EVV enrollment assigned${clientName ? ` — ${clientName}` : ''}`;
+  const subject = `EVV enrollment assigned${serviceName ? ` — ${serviceName}` : ''}${clientName ? ` (${clientName})` : ''}`;
   const portalUrl = formUrl || `${getFrontendUrl()}/caregiver/evv-enrollments`;
 
   const text = [
     `Hello ${caregiverName},`,
     '',
-    `${agency} has assigned you an EVV enrollment form${clientName ? ` for client ${clientName}` : ''}.`,
+    `${agency} has assigned you an EVV enrollment form${clientName ? ` for client ${clientName}` : ''}${serviceName ? ` — service: ${serviceName}` : ''}.`,
     enrollmentCode ? `Enrollment code: ${enrollmentCode}` : '',
     '',
     `Open your EVV forms: ${portalUrl}`,
@@ -498,12 +499,109 @@ const sendEvvEnrollmentAssignedEmail = async ({
     <p style="margin:0 0 12px;">Hello ${escapeHtml(caregiverName)},</p>
     <p style="margin:0 0 12px;">
       <strong>${escapeHtml(agency)}</strong> has assigned you an EVV enrollment form
-      ${clientName ? ` for client <strong>${escapeHtml(clientName)}</strong>` : ''}.
+      ${clientName ? ` for client <strong>${escapeHtml(clientName)}</strong>` : ''}
+      ${serviceName ? ` covering <strong>${escapeHtml(serviceName)}</strong>` : ''}.
     </p>
     ${enrollmentCode ? `<p style="margin:0 0 12px;font-size:14px;color:#64748b;">Enrollment code: <strong style="color:#0f172a;">${escapeHtml(enrollmentCode)}</strong></p>` : ''}
     ${ctaButton(portalUrl, 'Complete EVV Form')}
     <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
       Thank you,<br /><strong style="color:#0f172a;">${escapeHtml(agency)}</strong>
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Notify agency when caregiver submits an EVV enrollment form */
+const sendEvvEnrollmentSubmittedEmail = async ({
+  to,
+  recipientName,
+  agencyName,
+  caregiverName,
+  clientName,
+  enrollmentCode,
+  reviewUrl,
+}) => {
+  const subject = `EVV form submitted${clientName ? ` — ${clientName}` : ''}${enrollmentCode ? ` (${enrollmentCode})` : ''}`;
+  const agency = agencyName || 'Your agency';
+
+  const text = [
+    `Hello ${recipientName || 'there'},`,
+    '',
+    `${caregiverName || 'A caregiver'} has submitted an EVV enrollment form for review.`,
+    clientName ? `Client: ${clientName}` : '',
+    caregiverName ? `Caregiver: ${caregiverName}` : '',
+    enrollmentCode ? `Enrollment code: ${enrollmentCode}` : '',
+    reviewUrl ? `Review: ${reviewUrl}` : '',
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('EVV form submitted', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(recipientName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      <strong>${escapeHtml(caregiverName || 'A caregiver')}</strong> has submitted an EVV enrollment form
+      ${clientName ? ` for client <strong>${escapeHtml(clientName)}</strong>` : ''} and it is ready for agency review.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${enrollmentCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Enrollment code</span><br /><strong>${escapeHtml(enrollmentCode)}</strong></p>` : ''}
+        ${caregiverName ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Caregiver</span><br /><strong>${escapeHtml(caregiverName)}</strong></p>` : ''}
+        ${clientName ? `<p style="margin:0;"><span style="color:#64748b;">Client</span><br /><strong>${escapeHtml(clientName)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${reviewUrl ? ctaButton(reviewUrl, 'Review EVV enrollment') : ''}
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      ${escapeHtml(agency)}
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
+/** Confirm to caregiver that their EVV enrollment form was submitted */
+const sendEvvEnrollmentSubmitConfirmationEmail = async ({
+  to,
+  caregiverName,
+  agencyName,
+  clientName,
+  enrollmentCode,
+  portalUrl,
+}) => {
+  const agency = agencyName || 'Your agency';
+  const subject = `EVV form submitted successfully${clientName ? ` — ${clientName}` : ''}`;
+  const listUrl = portalUrl || `${getFrontendUrl()}/caregiver/evv-enrollments`;
+
+  const text = [
+    `Hello ${caregiverName || 'there'},`,
+    '',
+    `Your EVV enrollment form${clientName ? ` for client ${clientName}` : ''} has been submitted successfully.`,
+    enrollmentCode ? `Enrollment code: ${enrollmentCode}` : '',
+    `${agency} will review your submission.`,
+    '',
+    `View your EVV forms: ${listUrl}`,
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].filter(Boolean).join('\n');
+
+  const html = wrapEmail('EVV form submitted', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(caregiverName || 'there')},</p>
+    <p style="margin:0 0 12px;">
+      Your EVV enrollment form${clientName ? ` for client <strong>${escapeHtml(clientName)}</strong>` : ''}
+      has been submitted successfully and is awaiting review by
+      <strong>${escapeHtml(agency)}</strong>.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        ${enrollmentCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Enrollment code</span><br /><strong>${escapeHtml(enrollmentCode)}</strong></p>` : ''}
+        ${clientName ? `<p style="margin:0;"><span style="color:#64748b;">Client</span><br /><strong>${escapeHtml(clientName)}</strong></p>` : ''}
+      </td></tr>
+    </table>
+    ${ctaButton(listUrl, 'View EVV forms')}
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      Thank you,<br /><strong style="color:#0f172a;">CareTraker</strong>
     </p>
   `);
 
@@ -949,6 +1047,8 @@ module.exports = {
   sendHrCustomEmail,
   sendCandidateCustomEmail,
   sendEvvEnrollmentAssignedEmail,
+  sendEvvEnrollmentSubmittedEmail,
+  sendEvvEnrollmentSubmitConfirmationEmail,
   sendAgencyInvitationEmail,
   sendAgencyRegistrationWelcomeEmail,
   sendAdminAgencyOnboardedEmail,

@@ -12,6 +12,7 @@ module.exports = {
   InterviewFeedbackController: require('./agency/InterviewFeedbackController'),
   AgencyCaregiverController: require('./agency/AgencyCaregiverController'),
   ClientController: require('./agency/ClientController'),
+  LeadController: require('./agency/LeadController'),
   ClientAssessmentController: require('./agency/ClientAssessmentController'),
   CarePlanController: require('./agency/CarePlanController'),
   InsuranceIntakeController: require('./agency/InsuranceIntakeController'),

@@ -109,6 +109,18 @@ router.post('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controll
 router.put('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.update);
 router.delete('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.remove);
 
+router.get('/agency/leads/options', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.getOptions);
+router.get('/agency/leads/stats', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.getStats);
+router.get('/agency/leads', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.getAll);
+router.get('/agency/leads/:id', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.getById);
+router.post('/agency/leads', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.create);
+router.put('/agency/leads/:id', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.update);
+router.delete('/agency/leads/:id', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.remove);
+router.post('/agency/leads/:id/convert', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.convert);
+router.post('/agency/leads/:id/log-contact', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.logContact);
+router.post('/agency/leads/:id/schedule-assessment', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.scheduleHomeAssessment);
+router.post('/agency/leads/:id/create-assessment', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.createAssessment);
+
 router.get('/agency/assessments/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getOptions);
 router.get('/agency/assessments/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getStats);
 router.get('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getAll);
@@ -173,6 +185,7 @@ router.get('/agency/visits', Auth.authenticate('agency_owner', 'hr'), Controller
 router.post('/agency/visits/:id/approve', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.approveVisit);
 router.post('/agency/visits/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.rejectVisit);
 router.post('/agency/visits/:id/resolve-exception', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.resolveException);
+router.put('/agency/visits/:id/log', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.updateVisitLog);
 router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getEvvDashboard);
 router.get('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.get);
 router.put('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.update);

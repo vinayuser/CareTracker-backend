@@ -31,6 +31,7 @@ module.exports.update = Joi.object({
   grace_minutes: Joi.number().valid(15, 30),
   effective_from: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
   effective_to: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow('', null),
+  timezone: Joi.string().allow('', null),
   notes: Joi.string().allow('', null),
   address: Joi.string().allow('', null),
   status: Joi.string().valid('Active', 'Paused', 'Ended'),
@@ -57,4 +58,12 @@ module.exports.approve = Joi.object({
 module.exports.reject = Joi.object({
   reason: Joi.string().trim().min(3).required(),
   notes: Joi.string().allow('', null),
+});
+
+module.exports.updateLog = Joi.object({
+  check_in_at: Joi.string().required(),
+  check_out_at: Joi.string().required(),
+  notes: Joi.string().allow('', null),
+  approve: Joi.boolean().default(false),
+  clear_late: Joi.boolean().default(false),
 });

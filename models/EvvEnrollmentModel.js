@@ -10,6 +10,8 @@ const EvvEnrollmentSchema = new mongoose.Schema(
     carePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'CarePlan', required: true, index: true },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true, index: true },
     caregiverAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', required: true, index: true },
+    /** Care-need area key (e.g. personalCare) — one enrollment per service assignment */
+    serviceAreaKey: { type: String, default: '', index: true },
     planCode: { type: String, default: '' },
     clientName: { type: String, default: '' },
     caregiverName: { type: String, default: '' },
@@ -24,6 +26,9 @@ const EvvEnrollmentSchema = new mongoose.Schema(
 );
 
 EvvEnrollmentSchema.index({ agencyId: 1, enrollmentCode: 1 }, { unique: true });
-EvvEnrollmentSchema.index({ agencyId: 1, carePlanId: 1, caregiverAccountId: 1 }, { unique: true });
+EvvEnrollmentSchema.index(
+  { agencyId: 1, carePlanId: 1, caregiverAccountId: 1, serviceAreaKey: 1 },
+  { unique: true },
+);
 
 module.exports = mongoose.model('EvvEnrollment', EvvEnrollmentSchema);

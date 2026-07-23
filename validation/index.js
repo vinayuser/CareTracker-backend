@@ -9,6 +9,7 @@ module.exports = {
   InterviewFeedback: require('./agency/interviewFeedback'),
   Caregiver: require('./agency/caregiver'),
   Client: require('./agency/client'),
+  Lead: require('./agency/lead'),
   ClientAssessment: require('./agency/clientAssessment'),
   CarePlan: require('./agency/carePlan'),
   InsuranceIntake: require('./agency/insuranceIntake'),
