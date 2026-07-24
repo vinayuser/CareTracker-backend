@@ -19,12 +19,21 @@ const getAccountId = (req) => {
   return account?._id || account?.id || null;
 };
 
-const splitName = (fullName = '') => {
-  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
-  return {
-    firstName: parts[0] || 'Unknown',
-    lastName: parts.slice(1).join(' ') || 'Lead',
-  };
+const joinName = (firstName = '', lastName = '') =>
+  [firstName, lastName].map((p) => String(p || '').trim()).filter(Boolean).join(' ');
+
+/** Prefer explicit first/last; fill from legacy full name only when both are empty. */
+const personNames = (person = {}, fullKey = 'fullName') => {
+  let firstName = String(person.firstName || '').trim();
+  let lastName = String(person.lastName || '').trim();
+  const legacy = String(person[fullKey] || person.name || '').trim();
+  if (!firstName && !lastName && legacy) {
+    const parts = legacy.split(/\s+/).filter(Boolean);
+    firstName = parts[0] || '';
+    lastName = parts.slice(1).join(' ') || '';
+  }
+  const fullName = joinName(firstName, lastName) || legacy;
+  return { firstName, lastName, fullName };
 };
 
 /** Parse "82 Years (12 May 1944)" or ISO / YYYY-MM-DD into DOB when possible */
@@ -48,12 +57,35 @@ const parseAgeOrDob = (value = '') => {
 const syncSummaryFields = (formData = {}) => {
   const basic = formData.basicInfo || {};
   const recipient = formData.careRecipient || {};
+  const contact = personNames(basic, 'fullName');
+  const careOf = personNames(recipient, 'name');
   return {
-    fullName: basic.fullName || '',
+    fullName: contact.fullName,
     phone: basic.phone || '',
     email: String(basic.email || '').trim().toLowerCase(),
-    recipientName: recipient.name || '',
+    recipientName: careOf.fullName,
     leadSource: basic.leadSource || '',
+  };
+};
+
+/** Persist first/last + derived display names on formData */
+const normalizeFormDataNames = (formData = {}) => {
+  const basic = personNames(formData.basicInfo || {}, 'fullName');
+  const recipient = personNames(formData.careRecipient || {}, 'name');
+  return {
+    ...formData,
+    basicInfo: {
+      ...(formData.basicInfo || {}),
+      firstName: basic.firstName,
+      lastName: basic.lastName,
+      fullName: basic.fullName,
+    },
+    careRecipient: {
+      ...(formData.careRecipient || {}),
+      firstName: recipient.firstName,
+      lastName: recipient.lastName,
+      name: recipient.fullName,
+    },
   };
 };
 
@@ -96,7 +128,7 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
   const family = fd.familyRep || {};
   const care = fd.careSummary || {};
   const home = fd.homeAssessment || {};
-  const contact = fd.contactLog || {};
+  const contactLog = fd.contactLog || {};
   const { dateOfBirth } = parseAgeOrDob(recipient.ageOrDob);
   const conditions = Array.isArray(recipient.medicalConditions)
     ? recipient.medicalConditions.join(', ')
@@ -105,9 +137,15 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
   const notesParts = [
     care.careNotes,
     home.notes,
-    contact.notes,
+    contactLog.notes,
     lead.notes,
   ].filter(Boolean);
+
+  const careOf = personNames(recipient, 'name');
+  const contactPerson = personNames(basic, 'fullName');
+  const clientFirst = careOf.firstName || contactPerson.firstName;
+  const clientLast = careOf.lastName || contactPerson.lastName;
+  const clientFull = joinName(clientFirst, clientLast) || careOf.fullName || contactPerson.fullName || lead.fullName || '';
 
   return {
     assessorName: extras.assessorName || home.assessorName || lead.assignedToName || '',
@@ -119,7 +157,9 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
     clientId: lead.clientId || null,
     formData: {
       clientInfo: {
-        clientName: recipient.name || basic.fullName || lead.fullName || '',
+        firstName: clientFirst,
+        lastName: clientLast,
+        clientName: clientFull,
         dob: dateOfBirth,
         age: '',
         gender: recipient.gender || '',
@@ -144,7 +184,7 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
         preferredContactMethods: basic.preferredContactMethod ? [basic.preferredContactMethod] : [],
       },
       responsibleParty: {
-        name: family.name || basic.fullName || '',
+        name: family.name || contactPerson.fullName || '',
         relationship: family.relationship || basic.relationship || '',
         phone: family.phone || basic.phone || '',
         email: family.email || basic.email || '',
@@ -162,7 +202,7 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
       },
       insurance: { types: [], policyNumber: '', authorizationNumber: '', hoursAuthorized: '', startDate: '' },
       emergencyInfo: {
-        primaryName: family.name || basic.fullName || '',
+        primaryName: family.name || contactPerson.fullName || '',
         primaryRelationship: family.relationship || basic.relationship || '',
         primaryPhone: family.phone || basic.phone || '',
         backupName: '',
@@ -175,7 +215,9 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
         types: recipient.allergies && recipient.allergies !== 'No Known Allergies' ? [recipient.allergies] : [],
         details: recipient.allergies || '',
       },
-      medications: [],
+      medications: Array.from({ length: 6 }, () => ({
+        name: '', dosage: '', frequency: '', purpose: '', selfManaged: false,
+      })),
       adls: {},
       adlComments: '',
       iadls: {},
@@ -283,7 +325,7 @@ const getById = async (req, id) => {
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const account = getAgencyAccount(req);
-  const formData = payload.formData || {};
+  const formData = normalizeFormDataNames(payload.formData || {});
   const summary = syncSummaryFields(formData);
 
   const doc = await Model.LeadModel.create({
@@ -312,7 +354,7 @@ const update = async (req, id, payload) => {
   if (!doc) throw new Error(constants.MESSAGE.LEAD.NOT_FOUND);
 
   if (payload.formData) {
-    doc.formData = { ...doc.formData, ...payload.formData };
+    doc.formData = normalizeFormDataNames({ ...doc.formData, ...payload.formData });
     const summary = syncSummaryFields(doc.formData);
     Object.assign(doc, summary);
   }
@@ -350,7 +392,10 @@ const mapLeadToClientPayload = (lead) => {
   const recipient = fd.careRecipient || {};
   const family = fd.familyRep || {};
   const care = fd.careSummary || {};
-  const { firstName, lastName } = splitName(recipient.name || basic.fullName);
+  const careOf = personNames(recipient, 'name');
+  const contact = personNames(basic, 'fullName');
+  const firstName = careOf.firstName || contact.firstName;
+  const lastName = careOf.lastName || contact.lastName;
   const { dateOfBirth } = parseAgeOrDob(recipient.ageOrDob);
   const conditions = Array.isArray(recipient.medicalConditions)
     ? recipient.medicalConditions.join(', ')
@@ -388,7 +433,7 @@ const mapLeadToClientPayload = (lead) => {
     medicalConditions: conditions,
     allergies: recipient.allergies || '',
     physicianName: recipient.doctorClinic || '',
-    emergencyContactName: family.name || basic.fullName || '',
+    emergencyContactName: family.name || contact.fullName || '',
     emergencyContactRelationship: family.relationship || basic.relationship || '',
     emergencyContactPhone: family.phone || basic.phone || '',
     careFrequency: care.careSchedule || '',
@@ -410,7 +455,7 @@ const convertToClient = async (req, id) => {
   }
 
   const clientPayload = mapLeadToClientPayload(doc);
-  if (!clientPayload.firstName) {
+  if (!clientPayload.firstName || !clientPayload.lastName) {
     throw new Error(constants.MESSAGE.LEAD.CONVERT_INCOMPLETE);
   }
 
@@ -513,22 +558,8 @@ const createAssessmentFromLead = async (req, id, extras = {}) => {
     }
   }
 
-  // Ensure client exists for assessment continuity when possible
-  if (!doc.clientId) {
-    try {
-      const clientPayload = mapLeadToClientPayload(doc);
-      if (clientPayload.firstName) {
-        const client = await createClient(req, clientPayload);
-        doc.clientId = client.id;
-      }
-    } catch (err) {
-      // Non-blocking — assessment can still be created without client
-      console.warn('[lead] auto-client before assessment failed', err.message);
-    }
-  }
-
+  // Client is created only when the assessment quote is accepted / onboarded — not here.
   const assessmentPayload = mapLeadToAssessmentPayload(doc, extras);
-  if (doc.clientId) assessmentPayload.clientId = String(doc.clientId);
   const assessment = await createAssessment(req, assessmentPayload);
 
   doc.assessmentId = assessment.id;

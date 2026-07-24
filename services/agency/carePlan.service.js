@@ -74,9 +74,8 @@ const formatCarePlan = (doc, client = null) => {
   plan.clientId = doc.clientId ? String(doc.clientId._id || doc.clientId || '') : null;
   plan.assessmentId = doc.assessmentId ? String(doc.assessmentId) : null;
   if (client) {
-    plan.client = typeof client === 'object' && client.firstName
-      ? formatClient(client)
-      : client;
+    const isDoc = typeof client === 'object' && (client._id || client.id || client.firstName || client.clientCode);
+    plan.client = isDoc ? formatClient(client) : client;
   }
   return plan;
 };

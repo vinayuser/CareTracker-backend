@@ -100,13 +100,43 @@ const formatAddress = (client) => {
 };
 
 const generateScheduleCode = async (agencyId) => {
-  const count = await Model.VisitScheduleModel.countDocuments({ agencyId });
-  return `SCH-${String(10001 + count).padStart(5, '0')}`;
+  // Max existing code + 1 (countDocuments reuses codes after deletes / failed creates)
+  const latest = await Model.VisitScheduleModel.findOne({ agencyId })
+    .sort({ scheduleCode: -1 })
+    .select('scheduleCode')
+    .lean();
+  let next = 10001;
+  const match = String(latest?.scheduleCode || '').match(/(\d+)\s*$/);
+  if (match) next = Number(match[1]) + 1;
+  return `SCH-${String(next).padStart(5, '0')}`;
 };
 
 const generateVisitCode = async (agencyId) => {
-  const count = await Model.VisitModel.countDocuments({ agencyId });
-  return `VST-${String(10001 + count).padStart(5, '0')}`;
+  const latest = await Model.VisitModel.findOne({ agencyId })
+    .sort({ visitCode: -1 })
+    .select('visitCode')
+    .lean();
+  let next = 10001;
+  const match = String(latest?.visitCode || '').match(/(\d+)\s*$/);
+  if (match) next = Number(match[1]) + 1;
+  return `VST-${String(next).padStart(5, '0')}`;
+};
+
+const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
+
+const friendlyDuplicateError = (err) => {
+  if (!isDuplicateKeyError(err)) return null;
+  const msg = String(err?.message || '');
+  if (/scheduleCode/i.test(msg)) {
+    return 'A schedule with this code already exists. Please try again.';
+  }
+  if (/visitCode/i.test(msg)) {
+    return 'A visit with this code already exists. Please try again.';
+  }
+  if (/scheduledDate|scheduleId/i.test(msg)) {
+    return 'A visit is already scheduled for this caregiver on that day.';
+  }
+  return 'This schedule already exists. Please try again.';
 };
 
 const haversineMeters = (lat1, lng1, lat2, lng2) => {
@@ -299,9 +329,29 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
     });
     if (existing) continue;
 
-    const visitCode = await generateVisitCode(schedule.agencyId);
-    const visit = await Model.VisitModel.create(buildVisitPayload(schedule, dateKey, visitCode));
-    created.push(visit);
+    let visit = null;
+    let lastError;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        const visitCode = await generateVisitCode(schedule.agencyId);
+        visit = await Model.VisitModel.create(buildVisitPayload(schedule, dateKey, visitCode));
+        break;
+      } catch (err) {
+        if (!isDuplicateKeyError(err) || !/visitCode/i.test(String(err?.message || ''))) {
+          // Same schedule+date already exists (race) — skip
+          if (isDuplicateKeyError(err) && /scheduledDate|scheduleId/i.test(String(err?.message || ''))) {
+            visit = null;
+            break;
+          }
+          throw err;
+        }
+        lastError = err;
+      }
+    }
+    if (!visit && lastError) {
+      throw new Error(friendlyDuplicateError(lastError) || 'Could not create visit. Please try again.');
+    }
+    if (visit) created.push(visit);
   }
 
   return { created: created.length, visits: created.map(formatVisit) };
@@ -362,6 +412,98 @@ const assertVerifiedEnrollment = async (agencyId, caregiverAccountId, carePlanId
   return enrollment;
 };
 
+const createOneSchedule = async (req, {
+  agencyId, carePlan, client, caregiver, payload, effectiveFrom, effectiveTo, recurrenceType, daysOfWeek, dayOfMonth,
+}) => {
+  const graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
+  let lastError;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const schedule = await Model.VisitScheduleModel.create({
+        agencyId,
+        scheduleCode: await generateScheduleCode(agencyId),
+        carePlanId: carePlan._id,
+        clientId: client._id,
+        caregiverAccountId: caregiver._id,
+        serviceArea: payload.service_area || '',
+        careNeedAreaKey: payload.care_need_area_key || '',
+        clientName: `${client.firstName || ''} ${client.lastName || ''}`.trim(),
+        caregiverName: caregiver.fullName || '',
+        planCode: carePlan.planCode || '',
+        recurrenceType,
+        daysOfWeek,
+        dayOfMonth,
+        startTime: payload.start_time,
+        endTime: payload.end_time,
+        graceMinutes,
+        timezone: resolveTimezone(payload.timezone),
+        effectiveFrom,
+        effectiveTo: effectiveTo || '',
+        status: payload.status || 'Active',
+        notes: payload.notes || '',
+        address: payload.address || formatAddress(client),
+        addressLat: client.homeLat ?? null,
+        addressLng: client.homeLng ?? null,
+        createdByAccountId: getAccountId(req),
+      });
+
+      const generated = await generateVisitsForSchedule(schedule);
+      return { schedule, generated };
+    } catch (err) {
+      // Retry only scheduleCode collisions; unique day/visit conflicts should surface clearly
+      if (!isDuplicateKeyError(err) || !/scheduleCode/i.test(String(err?.message || ''))) {
+        const friendly = friendlyDuplicateError(err);
+        if (friendly) throw new Error(friendly);
+        throw err;
+      }
+      lastError = err;
+    }
+  }
+
+  throw new Error(friendlyDuplicateError(lastError) || 'Could not create schedule. Please try again.');
+};
+
+/** Expand recurrence into concrete calendar dates (one schedule record per day). */
+const expandOccurrenceDateKeys = (payload) => {
+  const from = String(payload.effective_from || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_RECURRENCE);
+  }
+  let to = String(payload.effective_to || '').trim();
+  if (!to) {
+    to = addDaysToDateKey(from, DEFAULT_HORIZON_DAYS - 1);
+  }
+  if (to < from) {
+    throw new Error('Effective to must be on or after effective from');
+  }
+
+  const recurrenceType = payload.recurrence_type;
+  const daysOfWeek = recurrenceType === 'Weekly'
+    ? (payload.days_of_week || []).filter((d) => WEEK_DAYS.includes(d))
+    : [];
+  const dayOfMonth = recurrenceType === 'Monthly'
+    ? Number(payload.day_of_month) || Number(from.slice(8, 10)) || 1
+    : null;
+
+  const template = {
+    effectiveFrom: from,
+    effectiveTo: to,
+    recurrenceType,
+    daysOfWeek,
+    dayOfMonth,
+    timezone: resolveTimezone(payload.timezone),
+  };
+
+  const dates = [];
+  let cur = from;
+  while (cur <= to) {
+    if (occursOnDateKey(template, cur)) dates.push(cur);
+    cur = addDaysToDateKey(cur, 1);
+  }
+  return dates;
+};
+
 const createSchedule = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const carePlan = await Model.CarePlanModel.findOne({ _id: payload.care_plan_id, agencyId });
@@ -383,48 +525,43 @@ const createSchedule = async (req, payload) => {
     throw new Error(constants.MESSAGE.VISIT.INVALID_RECURRENCE);
   }
 
-  const graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
-  const daysOfWeek = recurrenceType === 'Weekly'
-    ? (payload.days_of_week || []).filter((d) => WEEK_DAYS.includes(d))
-    : [];
-  if (recurrenceType === 'Weekly' && daysOfWeek.length === 0) {
-    throw new Error(constants.MESSAGE.VISIT.DAYS_REQUIRED);
+  if (recurrenceType === 'Weekly') {
+    const daysOfWeek = (payload.days_of_week || []).filter((d) => WEEK_DAYS.includes(d));
+    if (daysOfWeek.length === 0) {
+      throw new Error(constants.MESSAGE.VISIT.DAYS_REQUIRED);
+    }
   }
 
-  const schedule = await Model.VisitScheduleModel.create({
-    agencyId,
-    scheduleCode: await generateScheduleCode(agencyId),
-    carePlanId: carePlan._id,
-    clientId: client._id,
-    caregiverAccountId: caregiver._id,
-    serviceArea: payload.service_area || '',
-    careNeedAreaKey: payload.care_need_area_key || '',
-    clientName: `${client.firstName || ''} ${client.lastName || ''}`.trim(),
-    caregiverName: caregiver.fullName || '',
-    planCode: carePlan.planCode || '',
-    recurrenceType,
-    daysOfWeek,
-    dayOfMonth: recurrenceType === 'Monthly'
-      ? Number(payload.day_of_month) || Number(String(payload.effective_from).slice(8, 10)) || 1
-      : null,
-    startTime: payload.start_time,
-    endTime: payload.end_time,
-    graceMinutes,
-    timezone: resolveTimezone(payload.timezone),
-    effectiveFrom: payload.effective_from,
-    effectiveTo: payload.effective_to || '',
-    status: payload.status || 'Active',
-    notes: payload.notes || '',
-    address: payload.address || formatAddress(client),
-    addressLat: client.homeLat ?? null,
-    addressLng: client.homeLng ?? null,
-    createdByAccountId: getAccountId(req),
-  });
+  // One VisitSchedule (+ visit) per calendar day so deleting one day does not wipe the series
+  const dateKeys = expandOccurrenceDateKeys(payload);
+  if (dateKeys.length === 0) {
+    throw new Error('No visit days fall in the selected date range');
+  }
 
-  const generated = await generateVisitsForSchedule(schedule);
+  const schedules = [];
+  let generatedVisits = 0;
+  for (const dateKey of dateKeys) {
+    const { schedule, generated } = await createOneSchedule(req, {
+      agencyId,
+      carePlan,
+      client,
+      caregiver,
+      payload,
+      effectiveFrom: dateKey,
+      effectiveTo: dateKey,
+      recurrenceType: 'Daily',
+      daysOfWeek: [],
+      dayOfMonth: null,
+    });
+    schedules.push(formatSchedule(schedule));
+    generatedVisits += generated.created;
+  }
+
   return {
-    schedule: formatSchedule(schedule),
-    generated_visits: generated.created,
+    schedule: schedules[0] || null,
+    schedules,
+    created_count: schedules.length,
+    generated_visits: generatedVisits,
   };
 };
 
@@ -534,10 +671,53 @@ const removeSchedule = async (req, id) => {
 
   await Model.VisitModel.deleteMany({
     scheduleId: schedule._id,
-    status: { $in: ['Scheduled', 'Missed'] },
+    status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled'] },
   });
   await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
   return { id: String(id) };
+};
+
+/** Delete a single calendar day visit (and its one-day schedule when applicable). */
+const removeVisit = async (req, id) => {
+  const agencyId = getAgencyId(req);
+  const visit = await Model.VisitModel.findOne({ _id: id, agencyId });
+  if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+
+  if (['InProgress', 'Completed'].includes(visit.status)) {
+    throw new Error('Cannot delete an in-progress or completed visit');
+  }
+
+  const schedule = visit.scheduleId
+    ? await Model.VisitScheduleModel.findOne({ _id: visit.scheduleId, agencyId })
+    : null;
+
+  const isSingleDaySchedule = Boolean(
+    schedule
+    && schedule.effectiveFrom
+    && (!schedule.effectiveTo || schedule.effectiveFrom === schedule.effectiveTo),
+  );
+
+  if (isSingleDaySchedule) {
+    await Model.VisitModel.deleteMany({
+      scheduleId: schedule._id,
+      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled'] },
+    });
+    await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
+    return {
+      id: String(id),
+      schedule_id: String(schedule._id),
+      deleted_schedule: true,
+    };
+  }
+
+  // Legacy multi-day schedule: cancel this day only so regenerate will not recreate it
+  visit.status = 'Cancelled';
+  await visit.save();
+  return {
+    id: String(id),
+    schedule_id: schedule ? String(schedule._id) : null,
+    deleted_schedule: false,
+  };
 };
 
 const getVisits = async (req, query = {}) => {
@@ -1533,6 +1713,7 @@ module.exports = {
   createSchedule,
   updateSchedule,
   removeSchedule,
+  removeVisit,
   getVisits,
   getCarePlanScheduleSources,
   getCaregiverVisits,

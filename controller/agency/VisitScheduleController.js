@@ -66,6 +66,15 @@ module.exports.remove = async (req, res, next) => {
   }
 };
 
+module.exports.removeVisit = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.removeVisit(req, req.params.id);
+    return res.success(constants.MESSAGE.VISIT.DELETED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.regenerate = async (req, res, next) => {
   try {
     const data = await VisitScheduleService.regenerateScheduleVisits(req, req.params.id);

@@ -45,19 +45,14 @@ const notifyMany = async (emails, sendFn) => {
   }));
 };
 
-const splitClientName = (fullName = '') => {
-  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
-  return {
-    firstName: parts[0] || '',
-    lastName: parts.slice(1).join(' ') || '',
-  };
-};
-
 const syncSummaryFields = (formData = {}) => {
   const ci = formData.clientInfo || {};
   const contact = formData.contactInfo || {};
+  const clientName = [ci.firstName, ci.lastName].filter(Boolean).join(' ').trim()
+    || ci.clientName
+    || '';
   return {
-    clientName: ci.clientName || '',
+    clientName,
     clientPhone: contact.mobile || contact.homePhone || '',
     clientEmail: contact.email || '',
   };
@@ -101,7 +96,11 @@ const mapAssessmentToClientPayload = (formData = {}) => {
   const emergency = formData.emergencyInfo || {};
   const physician = formData.physicianInfo || {};
   const insurance = formData.insurance || {};
-  const { firstName, lastName } = splitClientName(ci.clientName);
+  const firstName = String(ci.firstName || '').trim();
+  const lastName = String(ci.lastName || '').trim();
+  if (!firstName || !lastName) {
+    throw new Error('First name and last name are required to onboard the client');
+  }
 
   return {
     firstName,
@@ -421,7 +420,11 @@ const acceptQuote = async (req, id) => {
   plan.agreementDate = new Date().toISOString().split('T')[0];
   plan.formData = {
     ...existingForm,
-    clientInfo: { ...(existingForm.clientInfo || {}), ...seededForm.clientInfo },
+    clientInfo: {
+      ...(existingForm.clientInfo || {}),
+      ...seededForm.clientInfo,
+      clientId: client.clientCode || seededForm.clientInfo?.clientId || '',
+    },
     medicalInfo: { ...(existingForm.medicalInfo || {}), ...seededForm.medicalInfo },
     supplementary: { ...(existingForm.supplementary || {}), ...seededForm.supplementary },
   };
@@ -430,6 +433,31 @@ const acceptQuote = async (req, id) => {
   assessment.clientId = client.id;
   assessment.status = 'Accepted';
   await assessment.save();
+
+  // If this assessment came from a lead, attach the client and mark lead Converted (do not create another client).
+  try {
+    const leadId = assessment.formData?.leadMeta?.leadId;
+    const leadFilter = leadId
+      ? { _id: leadId, agencyId }
+      : { agencyId, assessmentId: assessment._id };
+    const lead = await Model.LeadModel.findOne(leadFilter);
+    if (lead) {
+      lead.clientId = client.id;
+      lead.stage = 'Converted';
+      lead.formData = {
+        ...(lead.formData || {}),
+        statusInfo: {
+          ...(lead.formData?.statusInfo || {}),
+          stage: 'Converted',
+          nextAction: 'Onboarded from assessment',
+        },
+      };
+      lead.nextAction = 'Onboarded from assessment';
+      await lead.save();
+    }
+  } catch (err) {
+    console.warn('[assessment] link lead after onboard failed', err.message);
+  }
 
   try {
     const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);

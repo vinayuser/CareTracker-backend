@@ -185,6 +185,7 @@ module.exports = {
       SCHEDULE_DELETED: 'Visit schedule deleted successfully',
       SCHEDULE_NOT_FOUND: 'Visit schedule not found',
       NOT_FOUND: 'Visit not found',
+      DELETED: 'Visit deleted successfully',
       INVALID_RECURRENCE: 'Invalid recurrence type',
       DAYS_REQUIRED: 'Select at least one day for weekly schedules',
       EVV_NOT_VERIFIED: 'EVV enrollment must be verified before clocking in for this care plan',
