@@ -2,6 +2,8 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const clientConstants = require('../../common/clientConstants');
+const insuranceConstants = require('../../common/insuranceIntakeConstants');
+const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
 
 const CLIENT_PAYLOAD_FIELDS = [
   'intakeDate', 'intakeId',
@@ -210,6 +212,63 @@ const remove = async (req, id) => {
   return { id: String(id) };
 };
 
+/** Latest related forms/docs for client ZIP export (agency owner). */
+const getRelatedForms = async (req, id) => {
+  const agencyId = getAgencyId(req);
+  const client = await Model.ClientModel.findOne({ _id: id, agencyId });
+  if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+
+  const filter = { agencyId, clientId: client._id };
+  const [assessment, carePlan, insuranceIntake, evvEnrollment] = await Promise.all([
+    Model.ClientAssessmentModel.findOne(filter).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+    Model.CarePlanModel.findOne(filter).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+    Model.ClientInsuranceIntakeModel.findOne(filter).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+    Model.EvvEnrollmentModel.findOne(filter).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+  ]);
+
+  const documents = [];
+  if (insuranceIntake?.formData?.requiredDocuments) {
+    const docs = insuranceIntake.formData.requiredDocuments;
+    DOC_KEYS.forEach((key) => {
+      const entry = docs[key];
+      const filePath = String(entry?.path || '').trim();
+      if (!filePath) return;
+      const label = insuranceConstants.REQUIRED_DOCUMENTS.find((d) => d.key === key)?.label || key;
+      documents.push({
+        key,
+        label,
+        url: functions.buildUploadUrl(filePath, req),
+        originalName: String(entry.originalName || '').trim(),
+        mimeType: String(entry.mimeType || '').trim(),
+      });
+    });
+  }
+
+  return {
+    client: {
+      id: String(client._id),
+      clientCode: client.clientCode || '',
+      fullName: `${client.firstName || ''} ${client.lastName || ''}`.trim(),
+    },
+    assessment: assessment
+      ? { id: String(assessment._id), assessmentCode: assessment.assessmentCode || '' }
+      : null,
+    care_plan: carePlan
+      ? { id: String(carePlan._id), planCode: carePlan.planCode || '' }
+      : null,
+    insurance_intake: insuranceIntake
+      ? {
+        id: String(insuranceIntake._id),
+        intakeCode: insuranceIntake.intakeCode || '',
+        documents,
+      }
+      : null,
+    evv_enrollment: evvEnrollment
+      ? { id: String(evvEnrollment._id), enrollmentCode: evvEnrollment.enrollmentCode || '' }
+      : null,
+  };
+};
+
 module.exports = {
   getOptions,
   getStats,
@@ -218,5 +277,6 @@ module.exports = {
   create,
   update,
   remove,
+  getRelatedForms,
   formatClient,
 };

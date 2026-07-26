@@ -66,3 +66,12 @@ module.exports.getOptions = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.getRelatedForms = async (req, res, next) => {
+  try {
+    const data = await ClientService.getRelatedForms(req, req.params.id);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};

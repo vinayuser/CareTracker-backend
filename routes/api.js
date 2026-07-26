@@ -104,6 +104,7 @@ router.post('/agency/caregivers/:id/email', Auth.authenticate('agency_owner', 'h
 router.get('/agency/clients/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getOptions);
 router.get('/agency/clients/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getStats);
 router.get('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getAll);
+router.get('/agency/clients/:id/related-forms', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getRelatedForms);
 router.get('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getById);
 router.post('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.create);
 router.put('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.update);
