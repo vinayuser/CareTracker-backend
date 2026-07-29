@@ -17,6 +17,7 @@ module.exports = {
   LeadModel: require('./LeadModel'),
   ClientAssessmentModel: require('./ClientAssessmentModel'),
   CarePlanModel: require('./CarePlanModel'),
+  CarePlanHistoryModel: require('./CarePlanHistoryModel'),
   ClientInsuranceIntakeModel: require('./ClientInsuranceIntakeModel'),
   EvvEnrollmentModel: require('./EvvEnrollmentModel'),
   VisitScheduleModel: require('./VisitScheduleModel'),

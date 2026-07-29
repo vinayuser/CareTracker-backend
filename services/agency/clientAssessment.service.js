@@ -62,9 +62,39 @@ const formatAssessment = (doc) => {
   const item = functions.toClientDoc(doc);
   if (!item) return null;
   item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
-  item.carePlanId = doc.carePlanId ? String(doc.carePlanId) : null;
+  const plan = doc.carePlanId?._id ? doc.carePlanId : null;
+  item.carePlanId = plan ? String(plan._id) : (doc.carePlanId ? String(doc.carePlanId) : null);
   item.clientId = doc.clientId ? String(doc.clientId) : null;
+  if (plan) {
+    item.hourlyRate = plan.hourlyRate;
+    item.weeklyHours = plan.weeklyHours;
+    item.quotedMonthlyPrice = plan.quotedMonthlyPrice;
+  }
   return item;
+};
+
+const notifyQuoteGenerated = async (req, assessment, plan) => {
+  try {
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(getAgencyId(req));
+    const clientEmail = assessment.clientEmail || assessment.formData?.contactInfo?.email || '';
+    const base = {
+      agencyName,
+      clientName: assessment.clientName,
+      assessmentCode: assessment.assessmentCode,
+      planCode: plan.planCode,
+      weeklyHours: plan.weeklyHours,
+      hourlyRate: plan.hourlyRate,
+      quotedMonthlyPrice: plan.quotedMonthlyPrice,
+      portalUrl: agencyPortalUrl(req, `/agency/care-plans/${plan._id}`),
+    };
+    await notifyMany([...ownerEmails, clientEmail], (to) => sendQuoteGeneratedEmail({
+      to,
+      recipientName: to === clientEmail ? assessment.clientName : ownerName,
+      ...base,
+    }));
+  } catch (err) {
+    console.error('[assessment] quote notify failed', err.message);
+  }
 };
 
 const generateAssessmentCode = async (agencyId) => {
@@ -219,7 +249,9 @@ const getAll = async (req, query = {}) => {
     ];
   }
 
-  const list = await Model.ClientAssessmentModel.find(filter).sort({ createdAt: -1 });
+  const list = await Model.ClientAssessmentModel.find(filter)
+    .populate({ path: 'carePlanId', select: 'hourlyRate weeklyHours quotedMonthlyPrice' })
+    .sort({ createdAt: -1 });
   return list.map(formatAssessment);
 };
 
@@ -345,6 +377,7 @@ const generateQuote = async (req, id, pricing) => {
     planCode: await generatePlanCode(agencyId),
     status: 'Draft',
     quoteStatus: 'Quoted',
+    version: 'v1',
     hourlyRate,
     weeklyHours,
     quotedMonthlyPrice,
@@ -359,32 +392,7 @@ const generateQuote = async (req, id, pricing) => {
   assessment.carePlanId = plan._id;
   assessment.status = 'Quoted';
   await assessment.save();
-
-  try {
-    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
-    const clientEmail = assessment.clientEmail || assessment.formData?.contactInfo?.email || '';
-    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${plan._id}`);
-    const base = {
-      agencyName,
-      clientName: assessment.clientName,
-      assessmentCode: assessment.assessmentCode,
-      planCode: plan.planCode,
-      weeklyHours: plan.weeklyHours,
-      hourlyRate: plan.hourlyRate,
-      quotedMonthlyPrice: plan.quotedMonthlyPrice,
-      portalUrl,
-    };
-    await notifyMany(
-      [...ownerEmails, clientEmail],
-      (to) => sendQuoteGeneratedEmail({
-        to,
-        recipientName: to === clientEmail ? assessment.clientName : ownerName,
-        ...base,
-      }),
-    );
-  } catch (err) {
-    console.error('[assessment] quote notify failed', err.message);
-  }
+  await notifyQuoteGenerated(req, assessment, plan);
 
   return {
     assessment: formatAssessment(assessment),
@@ -400,6 +408,43 @@ const generateQuote = async (req, id, pricing) => {
   };
 };
 
+/** Update pricing on the existing care plan quote. Never creates a client. */
+const updateQuote = async (req, id, pricing) => {
+  const agencyId = getAgencyId(req);
+  const assessment = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId });
+  if (!assessment) throw new Error(constants.MESSAGE.ASSESSMENT.NOT_FOUND);
+  if (!assessment.carePlanId) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_QUOTED);
+
+  const plan = await Model.CarePlanModel.findOne({ _id: assessment.carePlanId, agencyId });
+  if (!plan) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+
+  const { archiveCurrentVersion } = require('./carePlan.service');
+  await archiveCurrentVersion(req, plan);
+
+  const weeklyHours = pricing.weeklyHours ?? plan.weeklyHours ?? 0;
+  const hourlyRate = pricing.hourlyRate ?? plan.hourlyRate ?? 0;
+  plan.hourlyRate = hourlyRate;
+  plan.weeklyHours = weeklyHours;
+  plan.quotedMonthlyPrice = pricing.quotedMonthlyPrice
+    ?? Math.round(weeklyHours * hourlyRate * 4.33 * 100) / 100;
+  await plan.save();
+  await notifyQuoteGenerated(req, assessment, plan);
+
+  return {
+    assessment: formatAssessment(assessment),
+    carePlan: {
+      id: String(plan._id),
+      planCode: plan.planCode,
+      status: plan.status,
+      quoteStatus: plan.quoteStatus,
+      hourlyRate: plan.hourlyRate,
+      weeklyHours: plan.weeklyHours,
+      quotedMonthlyPrice: plan.quotedMonthlyPrice,
+      version: plan.version,
+    },
+  };
+};
+
 const acceptQuote = async (req, id) => {
   const agencyId = getAgencyId(req);
   const assessment = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId });
@@ -409,6 +454,9 @@ const acceptQuote = async (req, id) => {
 
   const plan = await Model.CarePlanModel.findOne({ _id: assessment.carePlanId, agencyId });
   if (!plan) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+
+  const { archiveCurrentVersion } = require('./carePlan.service');
+  await archiveCurrentVersion(req, plan);
 
   const client = await createClient(req, mapAssessmentToClientPayload(assessment.formData));
   const seededForm = mapAssessmentToCarePlanFormData(assessment.formData);
@@ -505,6 +553,7 @@ module.exports = {
   update,
   remove,
   generateQuote,
+  updateQuote,
   acceptQuote,
   formatAssessment,
 };

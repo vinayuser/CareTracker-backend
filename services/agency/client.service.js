@@ -80,13 +80,16 @@ const pickPayload = (payload) => {
   return syncDerivedFields(data);
 };
 
-const formatClient = (doc) => {
+const formatClient = (doc, req) => {
   const client = functions.toClientDoc(doc);
   if (!client) return null;
   client.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
   client.fullName = `${doc.firstName} ${doc.lastName}`.trim();
   client.age = computeAge(doc.dateOfBirth);
   client.address = formatAddress(doc);
+  client.profilePic = doc.profilePicPath
+    ? functions.buildUploadUrl(doc.profilePicPath, req)
+    : '';
 
   if (!client.primaryDiagnosis && client.medicalConditions) {
     client.primaryDiagnosis = client.medicalConditions;
@@ -151,14 +154,14 @@ const getAll = async (req, query = {}) => {
   }
 
   const list = await Model.ClientModel.find(filter).sort({ createdAt: -1 });
-  return list.map(formatClient);
+  return list.map((doc) => formatClient(doc, req));
 };
 
 const getById = async (req, id) => {
   const agencyId = getAgencyId(req);
   const doc = await Model.ClientModel.findOne({ _id: id, agencyId });
   if (!doc) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
-  return formatClient(doc);
+  return formatClient(doc, req);
 };
 
 const create = async (req, payload) => {
@@ -174,7 +177,7 @@ const create = async (req, payload) => {
         ...data,
         status: data.status || 'Pending',
       });
-      return formatClient(doc);
+      return formatClient(doc, req);
     } catch (err) {
       if (!isDuplicateKeyError(err)) throw err;
       lastError = err;
@@ -195,7 +198,7 @@ const update = async (req, id, payload) => {
   });
 
   await doc.save();
-  return formatClient(doc);
+  return formatClient(doc, req);
 };
 
 const remove = async (req, id) => {

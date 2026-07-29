@@ -48,7 +48,7 @@ const CarePlanSchema = new mongoose.Schema(
     agreementDate: { type: String, default: '' },
     effectiveDate: { type: String, default: '' },
     reviewDate: { type: String, default: '' },
-    version: { type: String, default: '1.0' },
+    version: { type: String, default: 'v1' },
     formData: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     assessment: { type: AssessmentSchema, default: () => ({}) },
     assessmentNotes: { type: String, default: '' },

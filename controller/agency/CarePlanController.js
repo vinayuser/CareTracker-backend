@@ -66,3 +66,30 @@ module.exports.remove = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.getVersions = async (req, res, next) => {
+  try {
+    const data = await CarePlanService.getVersions(req, req.params.id);
+    return res.success(constants.MESSAGE.CARE_PLAN.VERSIONS_LISTED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getVersionById = async (req, res, next) => {
+  try {
+    const data = await CarePlanService.getVersionById(req, req.params.id, req.params.historyId);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.sendVersion = async (req, res, next) => {
+  try {
+    const data = await CarePlanService.sendVersion(req, req.params.id, req.body || {});
+    return res.success(constants.MESSAGE.CARE_PLAN.VERSION_SENT, data);
+  } catch (error) {
+    next(error);
+  }
+};

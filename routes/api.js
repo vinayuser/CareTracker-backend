@@ -130,11 +130,15 @@ router.post('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Cont
 router.put('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.update);
 router.delete('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.remove);
 router.post('/agency/assessments/:id/generate-quote', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.generateQuote);
+router.put('/agency/assessments/:id/update-quote', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.updateQuote);
 router.post('/agency/assessments/:id/accept-quote', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.acceptQuote);
 
 router.get('/agency/care-plans/options', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getOptions);
 router.get('/agency/care-plans/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getStats);
 router.get('/agency/care-plans', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getAll);
+router.get('/agency/care-plans/:id/versions', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getVersions);
+router.post('/agency/care-plans/:id/versions/send', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.sendVersion);
+router.get('/agency/care-plans/:id/versions/:historyId', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getVersionById);
 router.get('/agency/care-plans/:id', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.getById);
 router.post('/agency/care-plans', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.create);
 router.put('/agency/care-plans/:id', Auth.authenticate('agency_owner', 'hr'), Controller.CarePlanController.update);

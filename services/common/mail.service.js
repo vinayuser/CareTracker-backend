@@ -943,11 +943,12 @@ const sendCarePlanUpdatedEmail = async ({
   clientName,
   planCode,
   status,
+  version,
   action = 'updated',
   portalUrl,
 }) => {
-  const label = action === 'created' ? 'created' : 'updated';
-  const subject = `Care plan ${label}${clientName ? ` — ${clientName}` : ''}${planCode ? ` (${planCode})` : ''}`;
+  const label = action === 'created' ? 'created' : action === 'version' ? 'shared' : 'updated';
+  const subject = `Care plan ${label}${version ? ` ${version}` : ''}${clientName ? ` — ${clientName}` : ''}${planCode ? ` (${planCode})` : ''}`;
 
   const text = [
     `Hello ${recipientName || 'there'},`,
@@ -955,6 +956,7 @@ const sendCarePlanUpdatedEmail = async ({
     `${agencyName || 'Your agency'} ${label} a care plan.`,
     clientName ? `Client: ${clientName}` : '',
     planCode ? `Plan code: ${planCode}` : '',
+    version ? `Version: ${version}` : '',
     status ? `Status: ${status}` : '',
     portalUrl ? `View: ${portalUrl}` : '',
     '',
@@ -971,10 +973,11 @@ const sendCarePlanUpdatedEmail = async ({
     <table cellpadding="0" cellspacing="0" style="margin:12px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
       <tr><td style="padding:14px 16px;font-size:14px;">
         ${planCode ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Plan code</span><br /><strong>${escapeHtml(planCode)}</strong></p>` : ''}
+        ${version ? `<p style="margin:0 0 8px;"><span style="color:#64748b;">Version</span><br /><strong>${escapeHtml(version)}</strong></p>` : ''}
         ${status ? `<p style="margin:0;"><span style="color:#64748b;">Status</span><br /><strong>${escapeHtml(status)}</strong></p>` : ''}
       </td></tr>
     </table>
-    ${portalUrl ? ctaButton(portalUrl, 'View care plan') : ''}
+    ${portalUrl ? ctaButton(portalUrl, action === 'version' ? 'View versions' : 'View care plan') : ''}
   `);
 
   return sendMail({ to, subject, html, text });

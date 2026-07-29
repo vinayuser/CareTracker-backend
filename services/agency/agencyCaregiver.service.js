@@ -119,6 +119,9 @@ const formatCaregiver = async (account, agencyId) => {
     }
   }
   client.candidate = candidate;
+  client.profilePic = candidate?.profile_pic_url || '';
+  if (!client.phone && candidate?.phone) client.phone = candidate.phone;
+  client.experience = candidate?.experience || '';
 
   return client;
 };

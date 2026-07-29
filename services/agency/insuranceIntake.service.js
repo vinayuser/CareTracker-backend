@@ -99,10 +99,24 @@ const formatInsuranceIntake = (doc, client = null, req = null) => {
   }
   item.documentCount = DOC_KEYS.filter((key) => item.formData?.requiredDocuments?.[key]?.path).length;
   if (client) {
-    item.client = typeof client === 'object' && client.firstName
-      ? formatClient(client)
+    item.client = typeof client === 'object' && (client.firstName || client._id)
+      ? formatClient(client, req)
       : client;
   }
+
+  const pri = item.formData?.primaryInsurance || {};
+  const ci = item.formData?.clientInfo || {};
+  const types = Array.isArray(pri.types) ? pri.types.filter(Boolean) : [];
+  item.insuranceCompany = pri.companyName || types.join(', ') || '';
+  item.memberId = pri.memberId || '';
+  item.planName = pri.planName || '';
+  item.groupNumber = pri.groupNumber || '';
+  item.clientCode = item.client?.clientCode || ci.clientId || '';
+  item.clientPhoto = item.client?.profilePic || '';
+  item.clientAddress = [ci.streetAddress || ci.address, ci.city, ci.state]
+    .filter(Boolean)
+    .join(', ') || item.client?.address || '';
+
   return item;
 };
 

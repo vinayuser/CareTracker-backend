@@ -76,6 +76,16 @@ module.exports.generateQuote = async (req, res, next) => {
   }
 };
 
+module.exports.updateQuote = async (req, res, next) => {
+  try {
+    await Validation.ClientAssessment.generateQuote.validateAsync(req.body);
+    const data = await ClientAssessmentService.updateQuote(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.CARE_PLAN.QUOTE_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.acceptQuote = async (req, res, next) => {
   try {
     const data = await ClientAssessmentService.acceptQuote(req, req.params.id);

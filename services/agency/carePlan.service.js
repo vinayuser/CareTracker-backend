@@ -14,7 +14,7 @@ const {
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
 
-const notifyCarePlanChange = async (req, plan, client, action = 'updated') => {
+const notifyCarePlanChange = async (req, plan, client, action = 'updated', version) => {
   try {
     const agencyId = plan.agencyId?._id || plan.agencyId;
     const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
@@ -22,7 +22,8 @@ const notifyCarePlanChange = async (req, plan, client, action = 'updated') => {
       ? `${client.firstName || ''} ${client.lastName || ''}`.trim() || client.name
       : '';
     const clientEmail = client?.email || '';
-    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${plan._id || plan.id}`);
+    const planId = plan._id || plan.id;
+    const portalUrl = agencyPortalUrl(req, `/agency/care-plans/${planId}/versions`);
     const emails = uniqueEmails([...ownerEmails, clientEmail]);
     await Promise.all(emails.map(async (to) => {
       try {
@@ -33,6 +34,7 @@ const notifyCarePlanChange = async (req, plan, client, action = 'updated') => {
           clientName,
           planCode: plan.planCode,
           status: plan.status,
+          version: version || plan.version,
           action,
           portalUrl,
         });
@@ -80,6 +82,42 @@ const formatCarePlan = (doc, client = null) => {
   return plan;
 };
 
+const buildSnapshot = (doc) => {
+  const raw = doc.toObject ? doc.toObject({ depopulate: true }) : { ...doc };
+  delete raw._id;
+  delete raw.__v;
+  delete raw.createdAt;
+  delete raw.updatedAt;
+  return raw;
+};
+
+const normalizeVersion = (value) => {
+  const n = parseInt(String(value || 'v1').replace(/^v/i, ''), 10);
+  return `v${Number.isFinite(n) && n > 0 ? n : 1}`;
+};
+
+const nextVersionLabel = (current) => {
+  const n = parseInt(String(current || 'v1').replace(/^v/i, ''), 10);
+  return `v${(Number.isFinite(n) && n > 0 ? n : 1) + 1}`;
+};
+
+/** Archive current live plan into history, then bump doc.version to the next label. */
+const archiveCurrentVersion = async (req, doc) => {
+  const version = normalizeVersion(doc.version);
+  const existing = await Model.CarePlanHistoryModel.findOne({ carePlanId: doc._id, version }).lean();
+  if (!existing) {
+    await Model.CarePlanHistoryModel.create({
+      agencyId: doc.agencyId,
+      carePlanId: doc._id,
+      clientId: doc.clientId || null,
+      version,
+      snapshot: buildSnapshot(doc),
+      createdByAccountId: getAccountId(req),
+    });
+  }
+  doc.version = nextVersionLabel(version);
+};
+
 const generatePlanCode = async (agencyId) => {
   const count = await Model.CarePlanModel.countDocuments({ agencyId });
   return `CP-${String(10001 + count).padStart(5, '0')}`;
@@ -125,7 +163,6 @@ const getById = async (req, id) => {
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
   const plan = formatCarePlan(doc, doc.clientId);
 
-  // Backfill physician / pharmacy / policy / hospital from linked assessment when client fields are empty
   if (doc.assessmentId && plan.client) {
     const assessment = await Model.ClientAssessmentModel.findOne({ _id: doc.assessmentId, agencyId }).lean();
     const physician = assessment?.formData?.physicianInfo || {};
@@ -176,7 +213,7 @@ const create = async (req, payload) => {
     agreementDate: payload.agreementDate || '',
     effectiveDate: payload.effectiveDate || '',
     reviewDate: payload.reviewDate || '',
-    version: payload.version || '1.0',
+    version: 'v1',
     formData: payload.formData || {},
     assessment: payload.assessment || buildDefaultAssessment(),
     assessmentNotes: payload.assessmentNotes || '',
@@ -202,13 +239,15 @@ const update = async (req, id, payload) => {
   const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId });
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
 
+  await archiveCurrentVersion(req, doc);
+
   if (payload.clientId) {
     const client = await Model.ClientModel.findOne({ _id: payload.clientId, agencyId });
     if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
     doc.clientId = client._id;
   }
 
-  ['status', 'effectiveDate', 'reviewDate', 'version', 'assessmentNotes', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
+  ['status', 'effectiveDate', 'reviewDate', 'assessmentNotes', 'hourlyRate', 'weeklyHours', 'quotedMonthlyPrice', 'agreementDate'].forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
 
@@ -236,8 +275,154 @@ const remove = async (req, id) => {
   const agencyId = getAgencyId(req);
   const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId });
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+  await Model.CarePlanHistoryModel.deleteMany({ carePlanId: id, agencyId });
   await Model.CarePlanModel.deleteOne({ _id: id });
   return { id: String(id) };
+};
+
+const formatVersionRow = ({
+  id,
+  version,
+  isLatest,
+  createdAt,
+  status,
+  planCode,
+  client,
+  assessor,
+}) => ({
+  id,
+  version,
+  isLatest: Boolean(isLatest),
+  createdAt,
+  status: status || '',
+  planCode: planCode || '',
+  client: client || { name: '', code: '', photo: '', email: '', phone: '' },
+  assessor: assessor || { name: '', title: '', photo: '' },
+});
+
+const pickAssessor = (formData = {}) => {
+  const a = formData.assessor || {};
+  return {
+    name: a.name || '',
+    title: a.title || '',
+    photo: a.photo || '',
+  };
+};
+
+const pickClientSummary = (clientDoc, formData = {}, req) => {
+  const ci = formData.clientInfo || {};
+  const name = clientDoc
+    ? `${clientDoc.firstName || ''} ${clientDoc.lastName || ''}`.trim()
+      || clientDoc.fullName
+      || ''
+    : (ci.clientName || '');
+  const photo = clientDoc?.profilePicPath
+    ? functions.buildUploadUrl(clientDoc.profilePicPath, req)
+    : '';
+  return {
+    name: name || '',
+    code: clientDoc?.clientCode || ci.clientId || '',
+    photo,
+    email: clientDoc?.email || ci.email || '',
+    phone: clientDoc?.phone || clientDoc?.phoneHome || ci.phone || '',
+  };
+};
+
+const getVersions = async (req, id) => {
+  const agencyId = getAgencyId(req);
+  const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId }).populate('clientId');
+  if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+
+  const liveClient = doc.clientId || null;
+  const liveForm = doc.formData?.toObject?.() || doc.formData || {};
+  const history = await Model.CarePlanHistoryModel.find({ carePlanId: id, agencyId }).sort({ createdAt: -1 });
+
+  const latest = formatVersionRow({
+    id: 'latest',
+    version: normalizeVersion(doc.version),
+    isLatest: true,
+    createdAt: doc.updatedAt || doc.createdAt,
+    status: doc.status,
+    planCode: doc.planCode,
+    client: pickClientSummary(liveClient, liveForm, req),
+    assessor: pickAssessor(liveForm),
+  });
+
+  const archived = history.map((h) => {
+    const s = h.snapshot || {};
+    const snapForm = s.formData || {};
+    return formatVersionRow({
+      id: String(h._id),
+      version: h.version,
+      isLatest: false,
+      createdAt: h.createdAt,
+      status: s.status,
+      planCode: s.planCode || doc.planCode,
+      client: pickClientSummary(liveClient, snapForm, req),
+      assessor: pickAssessor(snapForm),
+    });
+  });
+
+  return {
+    carePlanId: String(doc._id),
+    planCode: doc.planCode,
+    client: liveClient ? formatClient(liveClient) : null,
+    versions: [latest, ...archived],
+  };
+};
+
+const getVersionById = async (req, id, historyId) => {
+  const agencyId = getAgencyId(req);
+  const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId }).populate('clientId');
+  if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+
+  if (!historyId || historyId === 'latest') {
+    return {
+      ...formatCarePlan(doc, doc.clientId),
+      isLatest: true,
+      historyId: null,
+    };
+  }
+
+  const history = await Model.CarePlanHistoryModel.findOne({ _id: historyId, carePlanId: id, agencyId });
+  if (!history) throw new Error(constants.MESSAGE.CARE_PLAN.VERSION_NOT_FOUND);
+
+  const snap = history.snapshot || {};
+  const fakeDoc = {
+    ...snap,
+    _id: doc._id,
+    agencyId: doc.agencyId,
+    clientId: doc.clientId,
+    assessmentId: snap.assessmentId || doc.assessmentId,
+    planCode: snap.planCode || doc.planCode,
+    version: history.version,
+  };
+  return {
+    ...formatCarePlan(fakeDoc, doc.clientId),
+    isLatest: false,
+    historyId: String(history._id),
+  };
+};
+
+const sendVersion = async (req, id, { historyId } = {}) => {
+  const agencyId = getAgencyId(req);
+  const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId }).populate('clientId');
+  if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
+
+  let version = normalizeVersion(doc.version);
+  let status = doc.status;
+  let planCode = doc.planCode;
+
+  if (historyId && historyId !== 'latest') {
+    const history = await Model.CarePlanHistoryModel.findOne({ _id: historyId, carePlanId: id, agencyId });
+    if (!history) throw new Error(constants.MESSAGE.CARE_PLAN.VERSION_NOT_FOUND);
+    version = history.version;
+    status = history.snapshot?.status || status;
+    planCode = history.snapshot?.planCode || planCode;
+  }
+
+  await notifyCarePlanChange(req, { ...doc.toObject(), planCode, status, version }, doc.clientId || null, 'version', version);
+  return { carePlanId: String(doc._id), version, historyId: historyId && historyId !== 'latest' ? historyId : null };
 };
 
 module.exports = {
@@ -248,4 +433,9 @@ module.exports = {
   create,
   update,
   remove,
+  getVersions,
+  getVersionById,
+  sendVersion,
+  archiveCurrentVersion,
+  formatCarePlan,
 };

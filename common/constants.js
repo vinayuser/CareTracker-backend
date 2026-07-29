@@ -148,9 +148,13 @@ module.exports = {
       DELETED: 'Care plan deleted successfully',
       NOT_FOUND: 'Care plan not found',
       QUOTE_CREATED: 'Care plan quote generated successfully',
+      QUOTE_UPDATED: 'Care plan quote updated successfully',
       QUOTE_ACCEPTED: 'Client onboarded and care plan activated',
       ALREADY_QUOTED: 'A quote already exists for this assessment',
       NOT_QUOTED: 'Generate a quote before accepting',
+      VERSION_NOT_FOUND: 'Care plan version not found',
+      VERSIONS_LISTED: 'Care plan versions loaded',
+      VERSION_SENT: 'Care plan version emailed successfully',
     },
     ASSESSMENT: {
       CREATED: 'Client assessment saved successfully',
