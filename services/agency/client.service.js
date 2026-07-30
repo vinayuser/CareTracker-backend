@@ -4,6 +4,7 @@ const functions = require('../../common/functions');
 const clientConstants = require('../../common/clientConstants');
 const insuranceConstants = require('../../common/insuranceIntakeConstants');
 const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
+const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 
 const CLIENT_PAYLOAD_FIELDS = [
   'intakeDate', 'intakeId',
@@ -164,9 +165,16 @@ const getById = async (req, id) => {
   return formatClient(doc, req);
 };
 
+const applyProfilePic = (doc, payload) => {
+  const nextPath = resolveProfilePicPath(payload?.profilePic, 'clients');
+  if (nextPath === null) return;
+  doc.profilePicPath = nextPath;
+};
+
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const data = pickPayload(payload);
+  const profilePicPath = resolveProfilePicPath(payload?.profilePic, 'clients');
   let lastError;
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -176,6 +184,7 @@ const create = async (req, payload) => {
         clientCode: await generateClientCode(agencyId),
         ...data,
         status: data.status || 'Pending',
+        ...(profilePicPath ? { profilePicPath } : {}),
       });
       return formatClient(doc, req);
     } catch (err) {
@@ -196,6 +205,7 @@ const update = async (req, id, payload) => {
   CLIENT_PAYLOAD_FIELDS.forEach((field) => {
     if (data[field] !== undefined) doc[field] = data[field];
   });
+  applyProfilePic(doc, payload);
 
   await doc.save();
   return formatClient(doc, req);

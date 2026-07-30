@@ -84,6 +84,7 @@ const clientFields = {
   carePlanStartDate: stringField,
   status: Joi.string().valid(...clientConstants.CLIENT_STATUSES).optional(),
   notes: stringField,
+  profilePic: Joi.string().allow('').optional(),
 };
 
 module.exports = {

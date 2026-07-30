@@ -77,6 +77,7 @@ module.exports = {
       HIRED_LOCKED: 'Reopen the hiring cycle before changing hired candidate status',
       HIRE_UNDONE: 'Candidate moved back to final hiring stage',
       REJECTED: 'Candidate rejected',
+      DELETED: 'Candidate deleted successfully',
       NOT_FOUND: 'Candidate not found',
       NOT_FINAL_STAGE: 'Candidate must be at the final pipeline stage to complete hiring',
       ALREADY_HIRED: 'Candidate has already been hired',

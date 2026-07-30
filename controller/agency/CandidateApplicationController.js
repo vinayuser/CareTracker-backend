@@ -96,6 +96,15 @@ module.exports.reject = async (req, res, next) => {
   }
 };
 
+module.exports.remove = async (req, res, next) => {
+  try {
+    const data = await CandidateApplicationService.deleteApplication(req, req.params.id);
+    return res.success(constants.MESSAGE.CANDIDATE.DELETED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.undoHire = async (req, res, next) => {
   try {
     const data = await CandidateApplicationService.undoHire(req, req.params.id);

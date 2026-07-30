@@ -69,7 +69,7 @@ const buildDefaultAssessment = () => {
   return assessment;
 };
 
-const formatCarePlan = (doc, client = null) => {
+const formatCarePlan = (doc, client = null, req = null) => {
   const plan = functions.toClientDoc(doc);
   if (!plan) return null;
   plan.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
@@ -77,7 +77,7 @@ const formatCarePlan = (doc, client = null) => {
   plan.assessmentId = doc.assessmentId ? String(doc.assessmentId) : null;
   if (client) {
     const isDoc = typeof client === 'object' && (client._id || client.id || client.firstName || client.clientCode);
-    plan.client = isDoc ? formatClient(client) : client;
+    plan.client = isDoc ? formatClient(client, req) : client;
   }
   return plan;
 };
@@ -154,14 +154,14 @@ const getAll = async (req, query = {}) => {
     .populate('clientId')
     .sort({ createdAt: -1 });
 
-  return list.map((doc) => formatCarePlan(doc, doc.clientId));
+  return list.map((doc) => formatCarePlan(doc, doc.clientId, req));
 };
 
 const getById = async (req, id) => {
   const agencyId = getAgencyId(req);
   const doc = await Model.CarePlanModel.findOne({ _id: id, agencyId }).populate('clientId');
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
-  const plan = formatCarePlan(doc, doc.clientId);
+  const plan = formatCarePlan(doc, doc.clientId, req);
 
   if (doc.assessmentId && plan.client) {
     const assessment = await Model.ClientAssessmentModel.findOne({ _id: doc.assessmentId, agencyId }).lean();
@@ -231,7 +231,7 @@ const create = async (req, payload) => {
     await syncFromCarePlan(agencyId, populated);
   }
   await notifyCarePlanChange(req, populated, populated.clientId || null, 'created');
-  return formatCarePlan(populated, populated.clientId || null);
+  return formatCarePlan(populated, populated.clientId || null, req);
 };
 
 const update = async (req, id, payload) => {
@@ -268,7 +268,7 @@ const update = async (req, id, payload) => {
     await syncFromCarePlan(agencyId, populated);
   }
   await notifyCarePlanChange(req, populated, populated.clientId || null, 'updated');
-  return formatCarePlan(populated, populated.clientId || null);
+  return formatCarePlan(populated, populated.clientId || null, req);
 };
 
 const remove = async (req, id) => {
@@ -366,7 +366,7 @@ const getVersions = async (req, id) => {
   return {
     carePlanId: String(doc._id),
     planCode: doc.planCode,
-    client: liveClient ? formatClient(liveClient) : null,
+    client: liveClient ? formatClient(liveClient, req) : null,
     versions: [latest, ...archived],
   };
 };
@@ -378,7 +378,7 @@ const getVersionById = async (req, id, historyId) => {
 
   if (!historyId || historyId === 'latest') {
     return {
-      ...formatCarePlan(doc, doc.clientId),
+      ...formatCarePlan(doc, doc.clientId, req),
       isLatest: true,
       historyId: null,
     };
@@ -398,7 +398,7 @@ const getVersionById = async (req, id, historyId) => {
     version: history.version,
   };
   return {
-    ...formatCarePlan(fakeDoc, doc.clientId),
+    ...formatCarePlan(fakeDoc, doc.clientId, req),
     isLatest: false,
     historyId: String(history._id),
   };

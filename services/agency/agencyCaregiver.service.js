@@ -2,6 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 const { sendCandidateCustomEmail } = require('../common/mail.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
@@ -119,7 +120,10 @@ const formatCaregiver = async (account, agencyId) => {
     }
   }
   client.candidate = candidate;
-  client.profilePic = candidate?.profile_pic_url || '';
+  const accountPic = account.profilePicPath
+    ? buildUploadUrl(account.profilePicPath)
+    : '';
+  client.profilePic = accountPic || candidate?.profile_pic_url || '';
   if (!client.phone && candidate?.phone) client.phone = candidate.phone;
   client.experience = candidate?.experience || '';
 
@@ -200,6 +204,18 @@ const update = async (req, id, payload) => {
   if (payload.employeeId !== undefined) account.employeeId = payload.employeeId;
   if (payload.dateOfBirth !== undefined) account.dateOfBirth = payload.dateOfBirth;
   if (payload.status !== undefined) account.status = payload.status;
+
+  const nextPicPath = resolveProfilePicPath(payload.profilePic, 'caregivers');
+  if (nextPicPath !== null) {
+    account.profilePicPath = nextPicPath;
+    const candidateId = account.candidateId;
+    if (candidateId) {
+      await Model.CandidateModel.updateOne(
+        { _id: candidateId },
+        { $set: { profilePicPath: nextPicPath } },
+      );
+    }
+  }
 
   await account.save();
   return formatCaregiver(account, agencyId);

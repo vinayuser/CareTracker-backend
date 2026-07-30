@@ -262,6 +262,7 @@ const getAllApplications = async (req, query = {}) => {
       id: String(app.jobPostId._id),
       job_title: app.jobPostId.jobTitle,
       job_location: app.jobPostId.jobLocation,
+      hiring_status: app.jobPostId.hiringStatus || 'Open',
     } : null,
     stage: app.agencyStageId ? {
       id: String(app.agencyStageId._id),
@@ -592,6 +593,42 @@ const rejectApplication = async (req, applicationId) => {
   return formatApplicationPopulated(app);
 };
 
+const deleteApplication = async (req, applicationId) => {
+  const agencyId = getAgencyId(req);
+  const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId });
+  if (!app) throw new Error(constants.MESSAGE.CANDIDATE.APPLICATION_NOT_FOUND);
+
+  let job = null;
+  if (app.status === 'Hired') {
+    job = await Model.JobPostModel.findById(app.jobPostId);
+    await assertHiredCandidateEditable(job);
+    removeHireBinding(job, app._id);
+    await syncJobAfterHireRemoved(job);
+  }
+
+  const candidateId = app.candidateId;
+
+  await Promise.all([
+    Model.CandidateFormSubmissionModel.deleteMany({ applicationId: app._id, agencyId }),
+    Model.InterviewFeedbackModel.deleteMany({ applicationId: app._id, agencyId }),
+    Model.CandidateStageAccessModel.deleteMany({ applicationId: app._id, agencyId }),
+  ]);
+
+  await Model.CandidateApplicationModel.deleteOne({ _id: app._id, agencyId });
+
+  if (candidateId) {
+    const otherApps = await Model.CandidateApplicationModel.countDocuments({
+      agencyId,
+      candidateId,
+    });
+    if (otherApps === 0) {
+      await Model.CandidateModel.deleteOne({ _id: candidateId, agencyId });
+    }
+  }
+
+  return { id: String(applicationId) };
+};
+
 const undoHire = async (req, applicationId) => {
   const agencyId = getAgencyId(req);
   const app = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId });
@@ -852,6 +889,7 @@ module.exports = {
   moveToNextStage,
   moveToPreviousStage,
   rejectApplication,
+  deleteApplication,
   undoHire,
   completeHire,
   getStageInfo,

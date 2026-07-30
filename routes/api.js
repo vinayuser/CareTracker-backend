@@ -214,6 +214,7 @@ router.post('/agency/job-applications/:id/set-stage', Auth.authenticate('agency_
 router.post('/agency/job-applications/:id/next-stage', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.moveToNextStage);
 router.post('/agency/job-applications/:id/previous-stage', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.moveToPreviousStage);
 router.post('/agency/job-applications/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.reject);
+router.delete('/agency/job-applications/:id', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.remove);
 router.post('/agency/job-applications/:id/undo-hire', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.undoHire);
 router.post('/agency/job-applications/:id/complete-hire', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.completeHire);
 router.get('/agency/job-applications/:id/form-submissions', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateFormController.getSubmissions);

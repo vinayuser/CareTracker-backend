@@ -12,6 +12,7 @@ module.exports = {
     employeeId: Joi.string().trim().allow('').optional(),
     dateOfBirth: Joi.string().allow('').optional(),
     status: Joi.string().valid('Active', 'Pending', 'Inactive').optional(),
+    profilePic: Joi.string().allow('').optional(),
   }).min(1),
   updateStatus: Joi.object({
     status: Joi.string().valid('Active', 'Pending', 'Inactive').required(),
