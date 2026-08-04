@@ -98,8 +98,9 @@ const update = async (req, id, payload) => {
   const agencyId = getAgencyId(req);
   const job = await Model.JobPostModel.findOne({ _id: id, agencyId });
   if (!job) throw new Error(constants.MESSAGE.JOB.NOT_FOUND);
+  // Allow edits even after a hiring cycle was completed (multi-hire support)
   if (job.hiringStatus === 'Complete') {
-    throw new Error(constants.MESSAGE.JOB.HIRING_CYCLE_LOCKED);
+    job.hiringStatus = 'Open';
   }
 
   const data = mapPayloadToJob(payload);

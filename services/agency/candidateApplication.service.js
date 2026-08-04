@@ -91,7 +91,7 @@ const getStageInfo = async (applicationId, agencyId) => {
     job_hiring_status: job?.hiringStatus || 'Open',
     caregiver_transferred: Boolean(app.caregiverAccountId),
     job_hired_count: jobHiredCount,
-    can_hire: jobHiredCount === 0 && currentIndex === stages.length - 1,
+    can_hire: currentIndex === stages.length - 1 && app.status === 'Active',
   };
 };
 
@@ -139,8 +139,10 @@ const applyForJob = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const job = await Model.JobPostModel.findOne({ _id: payload.job_id, agencyId });
   if (!job) throw new Error(constants.MESSAGE.JOB.NOT_FOUND);
+  // Multiple hires: reopen a completed cycle when adding another candidate
   if (job.hiringStatus === 'Complete') {
-    throw new Error(constants.MESSAGE.JOB.HIRING_CYCLE_LOCKED);
+    job.hiringStatus = 'Open';
+    await job.save();
   }
 
   const existingCandidate = await Model.CandidateModel.findOne({
@@ -314,8 +316,10 @@ const syncJobAfterHireRemoved = async (job) => {
 };
 
 const assertHiredCandidateEditable = async (job) => {
+  // Multiple-hire support: reopen a completed cycle instead of blocking edits
   if (job?.hiringStatus === 'Complete') {
-    throw new Error(constants.MESSAGE.CANDIDATE.HIRED_LOCKED);
+    job.hiringStatus = 'Open';
+    await job.save();
   }
 };
 
@@ -452,15 +456,6 @@ const completeHire = async (req, applicationId) => {
     throw new Error(constants.MESSAGE.CANDIDATE.ALREADY_HIRED);
   }
 
-  const existingHiredCount = await Model.CandidateApplicationModel.countDocuments({
-    jobPostId: job._id,
-    status: 'Hired',
-    _id: { $ne: app._id },
-  });
-  if (existingHiredCount > 0) {
-    throw new Error(constants.MESSAGE.CANDIDATE.JOB_HIRE_LIMIT);
-  }
-
   const candidate = app.candidateId;
   if (!candidate) throw new Error(constants.MESSAGE.CANDIDATE.NOT_FOUND);
 
@@ -477,14 +472,35 @@ const completeHire = async (req, applicationId) => {
       candidateId: candidate._id || candidate,
       boundAt: new Date(),
     });
+  }
+
+  // Existing jobs marked Complete under the old one-hire rule: reopen so more
+  // candidates can be hired, then transferred when hiring is marked complete again.
+  let transferredCaregiver = null;
+  if (job.hiringStatus === 'Complete') {
+    job.hiringStatus = 'Open';
+    await job.save();
+    transferredCaregiver = await transferHiredApplicationToCaregiver(req, app, job);
+  } else {
     await job.save();
   }
+
+  const hiredCount = await Model.CandidateApplicationModel.countDocuments({
+    jobPostId: job._id,
+    status: 'Hired',
+  });
 
   return {
     application: formatApplication(app, {
       candidate: formatCandidate(candidate),
     }),
-    message: 'Mark the job hiring cycle complete to add this candidate to your caregiver roster.',
+    hired_count: hiredCount,
+    caregiver: transferredCaregiver,
+    message: transferredCaregiver
+      ? 'Candidate hired and added to the caregiver roster. Hiring is open again so you can hire more candidates for this job.'
+      : hiredCount > 1
+        ? `${hiredCount} candidates are hired for this job. Mark the hiring cycle complete to add them to your caregiver roster.`
+        : 'Mark the job hiring cycle complete to add this candidate to your caregiver roster.',
   };
 };
 

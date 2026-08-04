@@ -3,7 +3,7 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const assessmentConstants = require('../../common/assessmentConstants');
 const { DEFAULT_SERVICES } = require('../../common/carePlanConstants');
-const { create: createClient } = require('./client.service');
+const { create: createClient, formatClient } = require('./client.service');
 const {
   sendAssessmentCreatedEmail,
   sendQuoteGeneratedEmail,
@@ -58,19 +58,49 @@ const syncSummaryFields = (formData = {}) => {
   };
 };
 
-const formatAssessment = (doc) => {
+const formatAssessment = (doc, req = null) => {
   const item = functions.toClientDoc(doc);
   if (!item) return null;
   item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
   const plan = doc.carePlanId?._id ? doc.carePlanId : null;
   item.carePlanId = plan ? String(plan._id) : (doc.carePlanId ? String(doc.carePlanId) : null);
-  item.clientId = doc.clientId ? String(doc.clientId) : null;
+  const clientRaw = doc.clientId;
+  const clientDoc = clientRaw && typeof clientRaw === 'object' && (clientRaw._id || clientRaw.id || clientRaw.firstName)
+    ? clientRaw
+    : null;
+  item.clientId = clientDoc
+    ? String(clientDoc._id || clientDoc.id)
+    : (clientRaw ? String(clientRaw) : null);
   if (plan) {
     item.hourlyRate = plan.hourlyRate;
     item.weeklyHours = plan.weeklyHours;
     item.quotedMonthlyPrice = plan.quotedMonthlyPrice;
   }
+  if (clientDoc) {
+    item.client = formatClient(clientDoc, req);
+    item.clientPhoto = item.client?.profilePic || '';
+  } else {
+    item.client = null;
+    item.clientPhoto = '';
+  }
   return item;
+};
+
+const resolveClientPhoto = async (agencyId, assessment, req) => {
+  if (assessment.clientPhoto) return assessment;
+  const email = String(assessment.clientEmail || assessment.formData?.contactInfo?.email || '').trim().toLowerCase();
+  const phone = String(assessment.clientPhone || assessment.formData?.contactInfo?.mobile || assessment.formData?.contactInfo?.homePhone || '').trim();
+  if (!email && !phone) return assessment;
+
+  const or = [];
+  if (email) or.push({ email });
+  if (phone) or.push({ phone }, { phoneHome: phone });
+  const client = await Model.ClientModel.findOne({ agencyId, $or: or });
+  if (client?.profilePicPath) {
+    assessment.clientPhoto = functions.buildUploadUrl(client.profilePicPath, req);
+    assessment.client = formatClient(client, req);
+  }
+  return assessment;
 };
 
 const notifyQuoteGenerated = async (req, assessment, plan) => {
@@ -251,15 +281,17 @@ const getAll = async (req, query = {}) => {
 
   const list = await Model.ClientAssessmentModel.find(filter)
     .populate({ path: 'carePlanId', select: 'hourlyRate weeklyHours quotedMonthlyPrice' })
+    .populate('clientId')
     .sort({ createdAt: -1 });
-  return list.map(formatAssessment);
+  return list.map((doc) => formatAssessment(doc, req));
 };
 
 const getById = async (req, id) => {
   const agencyId = getAgencyId(req);
-  const doc = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId });
+  const doc = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId }).populate('clientId');
   if (!doc) throw new Error(constants.MESSAGE.ASSESSMENT.NOT_FOUND);
-  return formatAssessment(doc);
+  const assessment = formatAssessment(doc, req);
+  return resolveClientPhoto(agencyId, assessment, req);
 };
 
 const create = async (req, payload) => {
@@ -309,7 +341,7 @@ const create = async (req, payload) => {
     console.error('[assessment] create notify failed', err.message);
   }
 
-  return formatAssessment(doc);
+  return formatAssessment(doc, req);
 };
 
 const update = async (req, id, payload) => {
@@ -344,7 +376,7 @@ const update = async (req, id, payload) => {
     }
   }
 
-  return formatAssessment(doc);
+  return formatAssessment(doc, req);
 };
 
 const remove = async (req, id) => {
@@ -395,7 +427,7 @@ const generateQuote = async (req, id, pricing) => {
   await notifyQuoteGenerated(req, assessment, plan);
 
   return {
-    assessment: formatAssessment(assessment),
+    assessment: formatAssessment(assessment, req),
     carePlan: {
       id: String(plan._id),
       planCode: plan.planCode,
@@ -431,7 +463,7 @@ const updateQuote = async (req, id, pricing) => {
   await notifyQuoteGenerated(req, assessment, plan);
 
   return {
-    assessment: formatAssessment(assessment),
+    assessment: formatAssessment(assessment, req),
     carePlan: {
       id: String(plan._id),
       planCode: plan.planCode,
@@ -532,7 +564,7 @@ const acceptQuote = async (req, id) => {
   }
 
   return {
-    assessment: formatAssessment(assessment),
+    assessment: formatAssessment(assessment, req),
     client,
     carePlan: {
       id: String(plan._id),
