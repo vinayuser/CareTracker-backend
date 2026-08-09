@@ -94,4 +94,7 @@ module.exports = {
     firstName: Joi.string().trim().optional(),
     lastName: Joi.string().trim().optional(),
   }),
+  setPassword: Joi.object({
+    password: Joi.string().min(8).required(),
+  }),
 };

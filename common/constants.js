@@ -129,6 +129,9 @@ module.exports = {
       DELETED: 'Client deleted successfully',
       NOT_FOUND: 'Client not found',
       HAS_CARE_PLANS: 'Cannot delete client with existing care plans',
+      PASSWORD_UPDATED: 'Client password set and login email sent',
+      EMAIL_MISSING: 'Client email is required to create a portal login',
+      ACCOUNT_CONFLICT: 'This email is already used by another account',
     },
     LEAD: {
       CREATED: 'Lead created successfully',
@@ -156,6 +159,9 @@ module.exports = {
       VERSION_NOT_FOUND: 'Care plan version not found',
       VERSIONS_LISTED: 'Care plan versions loaded',
       VERSION_SENT: 'Care plan version emailed successfully',
+      SIGNED: 'Care plan signed successfully',
+      ALREADY_SIGNED: 'This care plan has already been signed',
+      SIGNATURE_REQUIRED: 'A signature is required',
     },
     ASSESSMENT: {
       CREATED: 'Client assessment saved successfully',
@@ -183,6 +189,11 @@ module.exports = {
       SYNCED: 'EVV enrollments synced from care plan',
       NOT_SUBMITTED: 'Enrollment must be submitted before verification',
       ALREADY_SUBMITTED: 'This enrollment has already been submitted',
+      SIGNATURES_REQUIRED: 'Both client and caregiver signatures are required before verification',
+      CLIENT_SIGNED: 'Client signature saved successfully',
+      ALREADY_SIGNED: 'This enrollment has already been signed by the client',
+      SIGNATURE_REQUIRED: 'A signature is required',
+      NOT_PENDING: 'This enrollment can no longer be signed',
     },
     VISIT: {
       SCHEDULE_CREATED: 'Visit schedule created successfully',

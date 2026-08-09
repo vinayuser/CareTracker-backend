@@ -75,3 +75,13 @@ module.exports.getRelatedForms = async (req, res, next) => {
     next(error);
   }
 };
+
+module.exports.setPassword = async (req, res, next) => {
+  try {
+    await Validation.Client.setPassword.validateAsync(req.body);
+    const data = await ClientService.setPassword(req, req.params.id, req.body.password);
+    return res.success(constants.MESSAGE.CLIENT.PASSWORD_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};

@@ -9,7 +9,7 @@ const AgencyAccountSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true },
     role: {
       type: String,
-      enum: ['AGENCY_OWNER', 'HR', 'CAREGIVER'],
+      enum: ['AGENCY_OWNER', 'HR', 'CAREGIVER', 'CLIENT'],
       default: 'AGENCY_OWNER',
     },
     status: {
@@ -22,6 +22,7 @@ const AgencyAccountSchema = new mongoose.Schema(
     invitationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invitation' },
     moduleAccess: { type: [String], default: [] },
     candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client' },
     sourceJobPostId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobPost' },
     employeeId: { type: String, default: '' },
     phone: { type: String, default: '' },

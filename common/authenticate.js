@@ -8,6 +8,7 @@ const PORTAL_ROLES = {
   agency_owner: 'agency_owner',
   hr: 'hr',
   caregiver: 'caregiver',
+  client: 'client',
 };
 
 const jtiMatches = (decoded, doc) => {
@@ -55,7 +56,8 @@ module.exports.authenticate = (...args) => async (req, res, next) => {
       decoded != null &&
       (roles.includes(PORTAL_ROLES.agency_owner) ||
         roles.includes(PORTAL_ROLES.hr) ||
-        roles.includes(PORTAL_ROLES.caregiver))
+        roles.includes(PORTAL_ROLES.caregiver) ||
+        roles.includes(PORTAL_ROLES.client))
     ) {
       const account = await Model.AgencyAccountModel.findOne({ _id: decoded._id }).populate('agencyId');
       if (account && account.status !== 'Inactive' && jtiMatches(decoded, account)) {

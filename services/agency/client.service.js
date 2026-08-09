@@ -5,6 +5,7 @@ const clientConstants = require('../../common/clientConstants');
 const insuranceConstants = require('../../common/insuranceIntakeConstants');
 const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
 const { resolveProfilePicPath } = require('../../common/profilePicUpload');
+const { sendClientWelcomeEmail } = require('../common/mail.service');
 
 const CLIENT_PAYLOAD_FIELDS = [
   'intakeDate', 'intakeId',
@@ -91,6 +92,8 @@ const formatClient = (doc, req) => {
   client.profilePic = doc.profilePicPath
     ? functions.buildUploadUrl(doc.profilePicPath, req)
     : '';
+  client.hasPortalAccess = Boolean(doc.accountId);
+  client.accountId = doc.accountId ? String(doc.accountId) : null;
 
   if (!client.primaryDiagnosis && client.medicalConditions) {
     client.primaryDiagnosis = client.medicalConditions;
@@ -282,6 +285,93 @@ const getRelatedForms = async (req, id) => {
   };
 };
 
+/**
+ * Create or update a CLIENT portal account and email credentials.
+ */
+const setPassword = async (req, id, password) => {
+  const agencyId = getAgencyId(req);
+  const client = await Model.ClientModel.findOne({ _id: id, agencyId });
+  if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+
+  const email = String(client.email || '').trim().toLowerCase();
+  if (!email) throw new Error(constants.MESSAGE.CLIENT.EMAIL_MISSING);
+
+  const fullName = `${client.firstName || ''} ${client.lastName || ''}`.trim() || email;
+  let account = null;
+
+  if (client.accountId) {
+    account = await Model.AgencyAccountModel.findOne({
+      _id: client.accountId,
+      agencyId,
+      role: 'CLIENT',
+    });
+  }
+
+  if (!account) {
+    account = await Model.AgencyAccountModel.findOne({
+      agencyId,
+      role: 'CLIENT',
+      clientId: client._id,
+    });
+  }
+
+  if (!account) {
+    const conflict = await Model.AgencyAccountModel.findOne({
+      $or: [{ email }, { userId: email }],
+    });
+    if (conflict) {
+      if (conflict.role === 'CLIENT' && String(conflict.clientId) === String(client._id)) {
+        account = conflict;
+      } else {
+        throw new Error(constants.MESSAGE.CLIENT.ACCOUNT_CONFLICT);
+      }
+    }
+  }
+
+  if (!account) {
+    account = new Model.AgencyAccountModel({
+      userId: email,
+      email,
+      fullName,
+      role: 'CLIENT',
+      status: 'Active',
+      agencyId,
+      clientId: client._id,
+      phone: client.phone || client.phoneHome || '',
+      dateOfBirth: client.dateOfBirth || '',
+      jti: functions.generateRandomStringAndNumbers(20),
+    });
+  } else {
+    account.userId = email;
+    account.email = email;
+    account.fullName = fullName;
+    account.clientId = client._id;
+    account.agencyId = agencyId;
+    account.status = 'Active';
+    if (client.phone || client.phoneHome) {
+      account.phone = client.phone || client.phoneHome;
+    }
+  }
+
+  await account.setPassword(password);
+  account.jti = functions.generateRandomStringAndNumbers(20);
+  await account.save();
+
+  client.accountId = account._id;
+  await client.save();
+
+  const agency = await Model.AgencyModel.findById(agencyId).select('name');
+  await sendClientWelcomeEmail({
+    to: email,
+    clientName: fullName,
+    agencyName: agency?.name || '',
+    email,
+    password,
+  });
+
+  return formatClient(client, req);
+};
+
 module.exports = {
   getOptions,
   getStats,
@@ -292,4 +382,5 @@ module.exports = {
   remove,
   getRelatedForms,
   formatClient,
+  setPassword,
 };

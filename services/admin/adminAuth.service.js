@@ -63,6 +63,22 @@ const formatAgencyUser = async (account) => {
     }
   }
 
+  if (role === 'CLIENT') {
+    user.clientId = account.clientId ? String(account.clientId) : '';
+    if (account.clientId) {
+      const client = await Model.ClientModel.findById(account.clientId).select(
+        'firstName lastName preferredName clientCode status',
+      );
+      if (client) {
+        const display = `${client.firstName || ''} ${client.lastName || ''}`.trim();
+        if (display) user.name = display;
+        user.preferredName = client.preferredName || '';
+        user.clientCode = client.clientCode || '';
+        user.clientStatus = client.status || '';
+      }
+    }
+  }
+
   return user;
 };
 
@@ -118,7 +134,7 @@ const getMe = async (req) => {
     return formatAdminUser(req.super_admin);
   }
 
-  const account = req.agency_owner || req.hr || req.caregiver;
+  const account = req.agency_owner || req.hr || req.caregiver || req.client;
   if (!account) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
 
   const fresh = await Model.AgencyAccountModel.findById(account._id || account.id).populate('agencyId');
@@ -171,7 +187,7 @@ const updateProfile = async (req, payload = {}) => {
     return { user: formatAdminUser(admin) };
   }
 
-  const session = req.agency_owner || req.hr || req.caregiver;
+  const session = req.agency_owner || req.hr || req.caregiver || req.client;
   if (!session) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
 
   const account = await Model.AgencyAccountModel.findById(session._id || session.id).populate('agencyId');
@@ -243,7 +259,7 @@ const changePassword = async (req, payload = {}) => {
     return { user: formatAdminUser(admin), token };
   }
 
-  const session = req.agency_owner || req.hr || req.caregiver;
+  const session = req.agency_owner || req.hr || req.caregiver || req.client;
   if (!session) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
 
   const account = await Model.AgencyAccountModel.findById(session._id || session.id).populate('agencyId');

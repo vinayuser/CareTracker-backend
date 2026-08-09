@@ -5,6 +5,7 @@ const evvConstants = require('../../common/evvEnrollmentConstants');
 const { formatClient } = require('./client.service');
 const {
   sendEvvEnrollmentAssignedEmail,
+  sendEvvEnrollmentClientAssignedEmail,
   sendEvvEnrollmentSubmittedEmail,
   sendEvvEnrollmentSubmitConfirmationEmail,
 } = require('../common/mail.service');
@@ -341,6 +342,24 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       } catch (err) {
         console.error('[syncFromCarePlan] EVV assignment email failed', err.message);
       }
+
+      try {
+        const clientEmail = client.email || '';
+        if (clientEmail) {
+          const clientFormUrl = `${functions.getFrontendUrl()}/client/evv-enrollments/${enrollment._id}`;
+          await sendEvvEnrollmentClientAssignedEmail({
+            to: clientEmail,
+            clientName: enrollment.clientName || `${client.firstName || ''} ${client.lastName || ''}`.trim(),
+            agencyName: agency?.name,
+            caregiverName: caregiver.fullName || '',
+            serviceName: serviceLabel,
+            enrollmentCode: enrollment.enrollmentCode,
+            formUrl: clientFormUrl,
+          });
+        }
+      } catch (err) {
+        console.error('[syncFromCarePlan] EVV client assignment email failed', err.message);
+      }
     } else if (enrollment.status === 'Pending' || enrollment.status === 'Rejected') {
       enrollment.planCode = carePlanDoc.planCode || '';
       enrollment.clientName = `${client.firstName} ${client.lastName}`.trim();
@@ -461,6 +480,15 @@ const verify = async (req, id, payload = {}) => {
   }
 
   const action = payload.action === 'reject' ? 'Rejected' : 'Verified';
+  if (action === 'Verified') {
+    const auth = doc.formData?.authorization || {};
+    const clientSigned = Boolean(auth.clientSignature && String(auth.clientSignature).startsWith('data:image'));
+    const caregiverSigned = Boolean(auth.caregiverSignature && String(auth.caregiverSignature).startsWith('data:image'));
+    if (!clientSigned || !caregiverSigned) {
+      throw new Error(constants.MESSAGE.EVV_ENROLLMENT.SIGNATURES_REQUIRED);
+    }
+  }
+
   doc.status = action;
   doc.verifiedAt = new Date();
   doc.verifiedByAccountId = getAccountId(req);
@@ -572,10 +600,24 @@ const submitCaregiver = async (req, id, payload) => {
 
   if (payload.formData) {
     const existing = doc.formData || {};
+    const existingAuth = existing.authorization || {};
+    const incomingAuth = payload.formData.authorization || {};
+    const clientAlreadySigned = Boolean(
+      existingAuth.clientSignature && String(existingAuth.clientSignature).startsWith('data:image'),
+    );
     doc.formData = {
       ...payload.formData,
       clientInfo: existing.clientInfo || payload.formData.clientInfo,
       serviceInfo: existing.serviceInfo || payload.formData.serviceInfo,
+      authorization: {
+        ...incomingAuth,
+        ...(clientAlreadySigned
+          ? {
+            clientSignature: existingAuth.clientSignature,
+            clientDate: existingAuth.clientDate,
+          }
+          : {}),
+      },
     };
   }
   doc.status = 'Submitted';
@@ -665,6 +707,71 @@ const notifyEvvEnrollmentSubmitted = async ({
   }
 };
 
+const getClientAccountContext = (req) => {
+  const account = req.client;
+  if (!account) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
+  const agencyId = account.agencyId?._id || account.agencyId;
+  const clientId = account.clientId?._id || account.clientId;
+  if (!agencyId || !clientId) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+  return { agencyId, clientId };
+};
+
+const getClientAll = async (req) => {
+  const { agencyId, clientId } = getClientAccountContext(req);
+  const list = await Model.EvvEnrollmentModel.find({ agencyId, clientId })
+    .populate('clientId')
+    .populate('carePlanId')
+    .sort({ createdAt: -1 });
+  return list.map((doc) => formatEvvEnrollment(doc, { client: doc.clientId, carePlan: doc.carePlanId }));
+};
+
+const getClientById = async (req, id) => {
+  const { agencyId, clientId } = getClientAccountContext(req);
+  const doc = await Model.EvvEnrollmentModel.findOne({ _id: id, agencyId, clientId })
+    .populate('clientId')
+    .populate('carePlanId');
+  if (!doc) throw new Error(constants.MESSAGE.EVV_ENROLLMENT.NOT_FOUND);
+  return formatEvvEnrollment(doc, { client: doc.clientId, carePlan: doc.carePlanId });
+};
+
+const signClient = async (req, id, payload = {}) => {
+  const { agencyId, clientId } = getClientAccountContext(req);
+  const doc = await Model.EvvEnrollmentModel.findOne({ _id: id, agencyId, clientId });
+  if (!doc) throw new Error(constants.MESSAGE.EVV_ENROLLMENT.NOT_FOUND);
+  if (['Verified'].includes(doc.status)) {
+    throw new Error(constants.MESSAGE.EVV_ENROLLMENT.NOT_PENDING);
+  }
+
+  const existingSig = doc.formData?.authorization?.clientSignature;
+  if (existingSig && String(existingSig).startsWith('data:image')) {
+    throw new Error(constants.MESSAGE.EVV_ENROLLMENT.ALREADY_SIGNED);
+  }
+
+  const signature = String(payload.signature || '').trim();
+  if (!signature.startsWith('data:image')) {
+    throw new Error(constants.MESSAGE.EVV_ENROLLMENT.SIGNATURE_REQUIRED);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const date = String(payload.date || today).trim() || today;
+
+  doc.formData = {
+    ...(doc.formData || {}),
+    authorization: {
+      ...(doc.formData?.authorization || {}),
+      clientSignature: signature,
+      clientDate: date,
+    },
+  };
+  doc.markModified('formData');
+  await doc.save();
+
+  const populated = await Model.EvvEnrollmentModel.findById(doc._id)
+    .populate('clientId')
+    .populate('carePlanId');
+  return formatEvvEnrollment(populated, { client: populated.clientId, carePlan: populated.carePlanId });
+};
+
 module.exports = {
   syncFromCarePlan,
   getOptions,
@@ -678,4 +785,7 @@ module.exports = {
   getCaregiverAll,
   getCaregiverById,
   submitCaregiver,
+  getClientAll,
+  getClientById,
+  signClient,
 };

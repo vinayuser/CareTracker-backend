@@ -814,6 +814,36 @@ const getCaregiverVisits = async (req, query = {}) => {
   return list.map(formatVisit);
 };
 
+const getClientVisits = async (req, query = {}) => {
+  const account = req.client;
+  if (!account) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
+  const agencyId = account.agencyId?._id || account.agencyId;
+  const clientId = account.clientId?._id || account.clientId;
+  if (!agencyId || !clientId) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
+
+  await markMissedVisits(agencyId);
+
+  const filter = {
+    agencyId,
+    clientId,
+  };
+  if (query.status && query.status !== 'All') filter.status = query.status;
+  if (query.date) filter.scheduledDate = query.date;
+  if (query.from || query.to) {
+    filter.scheduledDate = {};
+    if (query.from) filter.scheduledDate.$gte = query.from;
+    if (query.to) filter.scheduledDate.$lte = query.to;
+  } else if (!query.date) {
+    const today = toDateKey(new Date());
+    const end = new Date();
+    end.setDate(end.getDate() + 14);
+    filter.scheduledDate = { $gte: today, $lte: toDateKey(end) };
+  }
+
+  const list = await Model.VisitModel.find(filter).sort({ scheduledStartAt: 1 });
+  return list.map(formatVisit);
+};
+
 const checkInVisit = async (req, visitId, payload = {}) => {
   const caregiver = getCaregiverAccount(req);
   const agencyId = getCaregiverAgencyId(req);
@@ -1717,6 +1747,7 @@ module.exports = {
   getVisits,
   getCarePlanScheduleSources,
   getCaregiverVisits,
+  getClientVisits,
   checkInVisit,
   checkOutVisit,
   getActiveVisitForCaregiver,

@@ -104,6 +104,8 @@ const ClientSchema = new mongoose.Schema(
     carePlanStartDate: { type: String, default: '' },
 
     profilePicPath: { type: String, default: '' },
+    /** Linked portal login (AgencyAccount with role CLIENT) */
+    accountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', default: null },
     status: {
       type: String,
       enum: CLIENT_STATUSES,

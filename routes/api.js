@@ -8,17 +8,17 @@ router.post('/auth/forgot-password', Controller.AdminAuthController.forgotPasswo
 router.post('/auth/reset-password', Controller.AdminAuthController.resetPassword);
 router.get(
   '/auth/me',
-  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
   Controller.AdminAuthController.me,
 );
 router.put(
   '/auth/me',
-  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
   Controller.AdminAuthController.updateProfile,
 );
 router.patch(
   '/auth/password',
-  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver'),
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
   Controller.AdminAuthController.changePassword,
 );
 
@@ -108,6 +108,7 @@ router.get('/agency/clients/:id/related-forms', Auth.authenticate('agency_owner'
 router.get('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getById);
 router.post('/agency/clients', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.create);
 router.put('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.update);
+router.patch('/agency/clients/:id/password', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.setPassword);
 router.delete('/agency/clients/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.remove);
 
 router.get('/agency/leads/options', Auth.authenticate('agency_owner', 'hr'), Controller.LeadController.getOptions);
@@ -238,5 +239,17 @@ router.get('/caregiver/visits', Auth.authenticate('caregiver'), Controller.Visit
 router.get('/caregiver/visits/:id/timer', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getVisitTimer);
 router.post('/caregiver/visits/:id/check-in', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkIn);
 router.post('/caregiver/visits/:id/check-out', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkOut);
+
+// Client portal — /api/client/*
+router.get('/client/dashboard', Auth.authenticate('client'), Controller.ClientPortalController.getDashboard);
+router.get('/client/visits', Auth.authenticate('client'), Controller.ClientPortalController.getVisits);
+router.get('/client/caregivers', Auth.authenticate('client'), Controller.ClientPortalController.getCaregivers);
+router.get('/client/caregivers/:id', Auth.authenticate('client'), Controller.ClientPortalController.getCaregiverById);
+router.get('/client/evv-enrollments', Auth.authenticate('client'), Controller.ClientPortalController.getEvvEnrollments);
+router.post('/client/evv-enrollments/:id/sign', Auth.authenticate('client'), Controller.ClientPortalController.signEvvEnrollment);
+router.get('/client/evv-enrollments/:id', Auth.authenticate('client'), Controller.ClientPortalController.getEvvEnrollmentById);
+router.get('/client/care-plans', Auth.authenticate('client'), Controller.ClientPortalController.getCarePlans);
+router.post('/client/care-plans/:id/sign', Auth.authenticate('client'), Controller.ClientPortalController.signCarePlan);
+router.get('/client/care-plans/:id', Auth.authenticate('client'), Controller.ClientPortalController.getCarePlanById);
 
 module.exports = router;
