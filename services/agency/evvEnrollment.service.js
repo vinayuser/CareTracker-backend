@@ -602,21 +602,15 @@ const submitCaregiver = async (req, id, payload) => {
     const existing = doc.formData || {};
     const existingAuth = existing.authorization || {};
     const incomingAuth = payload.formData.authorization || {};
-    const clientAlreadySigned = Boolean(
-      existingAuth.clientSignature && String(existingAuth.clientSignature).startsWith('data:image'),
-    );
+    // Caregiver may sign caregiver sections only — never overwrite client signature.
     doc.formData = {
       ...payload.formData,
       clientInfo: existing.clientInfo || payload.formData.clientInfo,
       serviceInfo: existing.serviceInfo || payload.formData.serviceInfo,
       authorization: {
         ...incomingAuth,
-        ...(clientAlreadySigned
-          ? {
-            clientSignature: existingAuth.clientSignature,
-            clientDate: existingAuth.clientDate,
-          }
-          : {}),
+        clientSignature: existingAuth.clientSignature || '',
+        clientDate: existingAuth.clientDate || '',
       },
     };
   }

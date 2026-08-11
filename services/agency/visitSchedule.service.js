@@ -1521,13 +1521,36 @@ const getEvvDashboard = async (req, query = {}) => {
   };
 };
 
-const startOfWeekMonday = (date = new Date()) => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d;
+const WEEKDAY_OFFSET = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
+/** Monday–Sunday date keys for the week containing `dateKey` in `timeZone`. */
+const weekRangeFromDateKey = (dateKey, timeZone) => {
+  const wd = weekdayShortInZone(dateKey, timeZone);
+  const offset = WEEKDAY_OFFSET[wd] ?? 0;
+  const weekFrom = addDaysToDateKey(dateKey, -offset);
+  const weekTo = addDaysToDateKey(weekFrom, 6);
+  return { weekFrom, weekTo };
+};
+
+/** Format UTC instant as wall-clock time in the visit's IANA timezone (not server TZ). */
+const formatWallClockTime = (iso, timeZone) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const tz = resolveTimezone(timeZone);
+  const opts = { hour: 'numeric', minute: '2-digit', timeZone: tz };
+  try {
+    return d.toLocaleTimeString('en-US', opts);
+  } catch {
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+};
+
+const formatWallClockRange = (startIso, endIso, timeZone) => {
+  const start = formatWallClockTime(startIso, timeZone);
+  const end = formatWallClockTime(endIso, timeZone);
+  if (!start && !end) return '';
+  return `${start} – ${end}`;
 };
 
 const visitMinutes = (visit) => {
@@ -1560,14 +1583,16 @@ const getCaregiverDashboard = async (req) => {
   const caregiverId = caregiver._id || caregiver.id;
   await markMissedVisits(agencyId);
 
-  const todayKey = toDateKey(new Date());
-  const weekStart = startOfWeekMonday(new Date());
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  const weekFrom = toDateKey(weekStart);
-  const weekTo = toDateKey(weekEnd);
+  // Prefer this caregiver's visit timezone so "today" / clock times match Jobs schedule
+  // (production Node often runs in UTC; formatting without timeZone shifts the wall clock).
+  const tzSample = await Model.VisitModel.findOne({ agencyId, caregiverAccountId: caregiverId })
+    .sort({ scheduledStartAt: -1 })
+    .select('timezone');
+  const displayTz = resolveTimezone(tzSample?.timezone);
+  const todayKey = dateKeyInZone(new Date(), displayTz);
+  const { weekFrom, weekTo } = weekRangeFromDateKey(todayKey, displayTz);
 
-  const [todayVisits, weekVisits, enrollments] = await Promise.all([
+  const [todayVisits, weekVisits, enrollments, recentVisits] = await Promise.all([
     Model.VisitModel.find({
       agencyId,
       caregiverAccountId: caregiverId,
@@ -1582,6 +1607,11 @@ const getCaregiverDashboard = async (req) => {
       agencyId,
       caregiverAccountId: caregiverId,
     }),
+    Model.VisitModel.find({
+      agencyId,
+      caregiverAccountId: caregiverId,
+      checkOutAt: { $ne: null },
+    }).sort({ checkOutAt: -1 }).limit(5),
   ]);
 
   const todayCompleted = todayVisits.filter((v) => v.status === 'Completed' || (v.status === 'Exception' && v.checkOutAt)).length;
@@ -1607,14 +1637,17 @@ const getCaregiverDashboard = async (req) => {
     ? Number(((weekClassified.verified / complianceDenom) * 100).toFixed(1))
     : (weekVisits.length ? 100 : 100);
 
-  const hourlyRate = Number(caregiver.hourlyRate) || 25;
+  const rateSamples = weekVisits
+    .map((v) => Number(v.hourlyRateSnapshot))
+    .filter((r) => Number.isFinite(r) && r > 0);
+  const hourlyRate = rateSamples.length
+    ? Math.round((rateSamples.reduce((a, b) => a + b, 0) / rateSamples.length) * 100) / 100
+    : (Number(caregiver.hourlyRate) || 25);
   const estimatedPay = (weekMinutesWorked / 60) * hourlyRate;
 
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weeklyHours = dayLabels.map((day, idx) => {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + idx);
-    const key = toDateKey(d);
+    const key = addDaysToDateKey(weekFrom, idx);
     const mins = weekVisits
       .filter((v) => v.scheduledDate === key)
       .reduce((sum, v) => sum + (v.checkInAt && v.checkOutAt ? visitMinutes(v) : 0), 0);
@@ -1625,27 +1658,49 @@ const getCaregiverDashboard = async (req) => {
   let activeClock = null;
   if (active) {
     const sinceMs = Date.now() - new Date(active.checkInAt).getTime();
+    const tz = resolveTimezone(active.timezone || displayTz);
     activeClock = {
       clocked_in: true,
       visit_id: String(active._id),
       client: active.clientName || '',
-      since: new Date(active.checkInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      since: formatWallClockTime(active.checkInAt, tz),
       service: active.serviceArea || '',
       duration: formatDurationLabel(sinceMs / 60000),
       late: Boolean(active.lateCheckIn),
     };
   }
 
-  const today_schedule = todayVisits.map((v) => ({
-    id: String(v._id),
-    time: `${new Date(v.scheduledStartAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} – ${new Date(v.scheduledEndAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
-    client: v.clientName || '',
-    service: v.serviceArea || '',
-    address: v.address || '',
-    status: displayVisitStatus(v),
-    late_check_in: Boolean(v.lateCheckIn),
-    check_out_at: v.checkOutAt || null,
-  }));
+  const today_schedule = todayVisits.map((v) => {
+    const tz = resolveTimezone(v.timezone || displayTz);
+    return {
+      id: String(v._id),
+      time: formatWallClockRange(v.scheduledStartAt, v.scheduledEndAt, tz),
+      timezone: tz,
+      scheduled_start_at: v.scheduledStartAt || null,
+      scheduled_end_at: v.scheduledEndAt || null,
+      client: v.clientName || '',
+      service: v.serviceArea || '',
+      address: v.address || '',
+      status: displayVisitStatus(v),
+      late_check_in: Boolean(v.lateCheckIn),
+      check_out_at: v.checkOutAt || null,
+    };
+  });
+
+  const recent_visits = recentVisits.map((v) => {
+    const tz = resolveTimezone(v.timezone || displayTz);
+    return {
+      id: String(v._id),
+      date: v.scheduledDate || '',
+      time: formatWallClockRange(v.scheduledStartAt, v.scheduledEndAt, tz),
+      check_in: formatWallClockTime(v.checkInAt, tz),
+      check_out: formatWallClockTime(v.checkOutAt, tz),
+      client: v.clientName || '',
+      service: v.serviceArea || '',
+      status: displayVisitStatus(v),
+      duration: formatDurationLabel(visitMinutes(v)),
+    };
+  });
 
   const alerts = [];
   todayVisits.filter((v) => v.status === 'Missed').forEach((v) => {
@@ -1658,12 +1713,13 @@ const getCaregiverDashboard = async (req) => {
     });
   });
   todayVisits.filter((v) => v.lateCheckIn).forEach((v) => {
+    const tz = resolveTimezone(v.timezone || displayTz);
     alerts.push({
       id: `late-${v._id}`,
       type: 'Late Check-in',
       text: `${v.clientName || 'Client'} was clocked in after the grace window.`,
       time: v.checkInAt
-        ? new Date(v.checkInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        ? formatWallClockTime(v.checkInAt, tz)
         : 'Today',
       tone: 'warning',
     });
@@ -1681,17 +1737,25 @@ const getCaregiverDashboard = async (req) => {
 
   const nextUpcoming = todayVisits.find((v) => ['Scheduled', 'Late'].includes(v.status) && !v.checkInAt);
   if (nextUpcoming) {
+    const tz = resolveTimezone(nextUpcoming.timezone || displayTz);
     alerts.unshift({
       id: `upcoming-${nextUpcoming._id}`,
       type: 'Upcoming Visit',
-      text: `${nextUpcoming.clientName || 'Client'} at ${new Date(nextUpcoming.scheduledStartAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`,
+      text: `${nextUpcoming.clientName || 'Client'} at ${formatWallClockTime(nextUpcoming.scheduledStartAt, tz)}.`,
       time: 'Today',
       tone: 'info',
     });
   }
 
+  const caregiverName = caregiver.fullName
+    || caregiver.name
+    || `${caregiver.firstName || ''} ${caregiver.lastName || ''}`.trim()
+    || 'Caregiver';
+
+  const weekCompleted = weekVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length;
+
   return {
-    caregiver_name: caregiver.name || `${caregiver.firstName || ''} ${caregiver.lastName || ''}`.trim() || 'Caregiver',
+    caregiver_name: caregiverName,
     kpis: {
       today_visits: {
         total: todayVisits.length,
@@ -1715,15 +1779,24 @@ const getCaregiverDashboard = async (req) => {
         percent: compliancePct,
         period: 'This Week',
       },
+      enrollment: {
+        total: enrollments.length,
+        pending: enrollments.filter((e) => e.status === 'Pending').length,
+        submitted: enrollments.filter((e) => e.status === 'Submitted').length,
+        verified: enrollments.filter((e) => e.status === 'Verified').length,
+        rejected: enrollments.filter((e) => e.status === 'Rejected').length,
+        action_needed: pendingEnroll.length,
+      },
     },
     today_schedule,
+    recent_visits,
     active_clock: activeClock || { clocked_in: false },
     alerts: alerts.slice(0, 6),
     weekly_hours: weeklyHours,
     weekly_summary: {
       total_hours: formatDurationLabel(weekMinutesWorked),
       total_visits: weekVisits.length,
-      completed_visits: weekVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length,
+      completed_visits: weekCompleted,
     },
     enrollment: {
       total: enrollments.length,
@@ -1731,6 +1804,7 @@ const getCaregiverDashboard = async (req) => {
       submitted: enrollments.filter((e) => e.status === 'Submitted').length,
       verified: enrollments.filter((e) => e.status === 'Verified').length,
       rejected: enrollments.filter((e) => e.status === 'Rejected').length,
+      action_needed: pendingEnroll.length,
     },
   };
 };

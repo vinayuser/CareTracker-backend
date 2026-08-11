@@ -2,6 +2,12 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const CarePlanService = require('./carePlan.service');
 const functions = require('../../common/functions');
+const {
+  DEFAULT_TIMEZONE,
+  dateKeyInZone,
+  addDaysToDateKey,
+  weekdayShortInZone,
+} = require('../../common/timezone');
 
 const resolveClient = async (req) => {
   const account = req.client;
@@ -14,24 +20,29 @@ const resolveClient = async (req) => {
   return { agencyId, client, account };
 };
 
-const toDateKey = (d) => {
-  const x = new Date(d);
-  const m = `${x.getMonth() + 1}`.padStart(2, '0');
-  const day = `${x.getDate()}`.padStart(2, '0');
-  return `${x.getFullYear()}-${m}-${day}`;
+const WEEKDAY_OFFSET = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
+/** Monday–Sunday date keys for the week containing `dateKey` in `timeZone`. */
+const weekRangeFromDateKey = (dateKey, timeZone) => {
+  const wd = weekdayShortInZone(dateKey, timeZone);
+  const offset = WEEKDAY_OFFSET[wd] ?? 0;
+  const weekFrom = addDaysToDateKey(dateKey, -offset);
+  const weekTo = addDaysToDateKey(weekFrom, 6);
+  return { weekFrom, weekTo };
 };
 
-const startOfWeekMonday = (date = new Date()) => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-  return d;
-};
-
-const fmtTime = (value) => {
+/** Format UTC instant as wall-clock time in the visit's IANA timezone (not server TZ). */
+const fmtTime = (value, timeZone) => {
   if (!value) return '';
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts = { hour: 'numeric', minute: '2-digit' };
+  if (timeZone) opts.timeZone = timeZone;
+  try {
+    return d.toLocaleTimeString('en-US', opts);
+  } catch {
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
 };
 
 const fmtDuration = (mins) => {
@@ -63,12 +74,14 @@ const getDashboard = async (req) => {
   const { agencyId, client } = await resolveClient(req);
   const agency = await Model.AgencyModel.findById(agencyId).select('name phone email');
 
-  const todayKey = toDateKey(new Date());
-  const weekStart = startOfWeekMonday(new Date());
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  const weekFrom = toDateKey(weekStart);
-  const weekTo = toDateKey(weekEnd);
+  // Prefer this client's visit timezone so "today" / clock times match the schedule calendar
+  // (production Node often runs in UTC; formatting without timeZone shifts the wall clock).
+  const tzSample = await Model.VisitModel.findOne({ agencyId, clientId: client._id })
+    .sort({ scheduledStartAt: -1 })
+    .select('timezone');
+  const displayTz = tzSample?.timezone || DEFAULT_TIMEZONE;
+  const todayKey = dateKeyInZone(new Date(), displayTz);
+  const { weekFrom, weekTo } = weekRangeFromDateKey(todayKey, displayTz);
 
   const [activePlanDoc, draftPlanDoc, todayVisits, weekVisits, recentVisit, openInvoices, lastPaid] = await Promise.all([
     Model.CarePlanModel.findOne({ agencyId, clientId: client._id, status: 'Active' }).sort({ updatedAt: -1 }),
@@ -209,31 +222,37 @@ const getDashboard = async (req) => {
         period: 'This Week',
       },
     },
-    todaySchedule: todayVisits.map((v) => ({
-      id: String(v._id),
-      time: `${fmtTime(v.scheduledStartAt)} – ${fmtTime(v.scheduledEndAt)}`,
-      caregiverName: v.caregiverName || 'Caregiver',
-      caregiverInitials: String(v.caregiverName || 'CG')
-        .split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join(''),
-      service: v.serviceArea || '',
-      address: v.address || '',
-      status: visitStatus(v),
-    })),
-    recentVisit: recentVisit
-      ? {
-        id: String(recentVisit._id),
-        date: recentVisit.scheduledDate || '',
-        time: `${fmtTime(recentVisit.scheduledStartAt)} – ${fmtTime(recentVisit.scheduledEndAt)}`,
-        caregiverName: recentVisit.caregiverName || 'Caregiver',
-        caregiverInitials: String(recentVisit.caregiverName || 'CG')
+    todaySchedule: todayVisits.map((v) => {
+      const tz = v.timezone || displayTz;
+      return {
+        id: String(v._id),
+        time: `${fmtTime(v.scheduledStartAt, tz)} – ${fmtTime(v.scheduledEndAt, tz)}`,
+        caregiverName: v.caregiverName || 'Caregiver',
+        caregiverInitials: String(v.caregiverName || 'CG')
           .split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join(''),
-        service: recentVisit.serviceArea || '',
-        status: visitStatus(recentVisit),
-        duration: fmtDuration(visitMinutes(recentVisit)),
-        checkIn: fmtTime(recentVisit.checkInAt),
-        checkOut: fmtTime(recentVisit.checkOutAt),
-        method: recentVisit.checkInMethod || recentVisit.checkOutMethod || 'Mobile App (GPS)',
-      }
+        service: v.serviceArea || '',
+        address: v.address || '',
+        status: visitStatus(v),
+      };
+    }),
+    recentVisit: recentVisit
+      ? (() => {
+        const tz = recentVisit.timezone || displayTz;
+        return {
+          id: String(recentVisit._id),
+          date: recentVisit.scheduledDate || '',
+          time: `${fmtTime(recentVisit.scheduledStartAt, tz)} – ${fmtTime(recentVisit.scheduledEndAt, tz)}`,
+          caregiverName: recentVisit.caregiverName || 'Caregiver',
+          caregiverInitials: String(recentVisit.caregiverName || 'CG')
+            .split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join(''),
+          service: recentVisit.serviceArea || '',
+          status: visitStatus(recentVisit),
+          duration: fmtDuration(visitMinutes(recentVisit)),
+          checkIn: fmtTime(recentVisit.checkInAt, tz),
+          checkOut: fmtTime(recentVisit.checkOutAt, tz),
+          method: recentVisit.checkInMethod || recentVisit.checkOutMethod || 'Mobile App (GPS)',
+        };
+      })()
       : null,
     carePlan: activePlan
       ? {
@@ -454,7 +473,7 @@ const formatClientCaregiver = async (account, meta, req, { includeUpcoming = fal
     .map((p) => p[0]?.toUpperCase() || '')
     .join('') || 'CG';
 
-  const todayKey = toDateKey(new Date());
+  const todayKey = dateKeyInZone(new Date(), DEFAULT_TIMEZONE);
   let nextVisit = null;
   let upcomingVisits = [];
 
