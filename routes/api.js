@@ -194,6 +194,7 @@ router.post('/agency/visits/:id/reject', Auth.authenticate('agency_owner', 'hr')
 router.post('/agency/visits/:id/resolve-exception', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.resolveException);
 router.put('/agency/visits/:id/log', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.updateVisitLog);
 router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getEvvDashboard);
+router.get('/agency/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getAgencyDashboard);
 router.get('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.get);
 router.put('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.update);
 

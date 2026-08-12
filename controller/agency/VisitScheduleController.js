@@ -120,6 +120,15 @@ module.exports.getEvvDashboard = async (req, res, next) => {
   }
 };
 
+module.exports.getAgencyDashboard = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.getAgencyDashboard(req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.getCaregiverDashboard = async (req, res, next) => {
   try {
     const data = await VisitScheduleService.getCaregiverDashboard(req);

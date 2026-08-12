@@ -1521,6 +1521,356 @@ const getEvvDashboard = async (req, query = {}) => {
   };
 };
 
+const initialsFromName = (name = '') => String(name)
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((p) => p[0]?.toUpperCase() || '')
+  .join('') || '?';
+
+const displayAgencyVisitStatus = (visit) => {
+  if (visit.status === 'Missed') return 'Missed';
+  if (visit.checkOutAt || visit.status === 'Completed') return 'Completed';
+  if (['InProgress', 'Exception'].includes(visit.status) && visit.checkInAt && !visit.checkOutAt) return 'In Progress';
+  if (visit.status === 'Cancelled') return 'Cancelled';
+  return 'Scheduled';
+};
+
+const mmddFromDob = (dob) => {
+  const s = String(dob || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[2]}-${m[3]}`;
+  return '';
+};
+
+const upcomingBirthdayKeys = (fromDateKey, days = 7) => {
+  const keys = new Set();
+  for (let i = 0; i < days; i += 1) {
+    const key = addDaysToDateKey(fromDateKey, i);
+    const [, m, d] = key.split('-');
+    keys.add(`${m}-${d}`);
+  }
+  return keys;
+};
+
+const getAgencyDashboard = async (req) => {
+  const agencyId = getAgencyId(req);
+  await markMissedVisits(agencyId);
+
+  const displayTz = DEFAULT_TIMEZONE;
+  const todayKey = dateKeyInZone(new Date(), displayTz);
+  const { weekFrom, weekTo } = weekRangeFromDateKey(todayKey, displayTz);
+  const prevWeekFrom = addDaysToDateKey(weekFrom, -7);
+  const prevWeekTo = addDaysToDateKey(weekTo, -7);
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const nextMonthStart = new Date(monthStart);
+  nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+  const prevMonthStart = new Date(monthStart);
+  prevMonthStart.setMonth(prevMonthStart.getMonth() - 1);
+
+  const [
+    clients,
+    caregivers,
+    todayVisits,
+    weekVisits,
+    prevWeekVisits,
+    monthInvoices,
+    prevMonthInvoices,
+    enrollments,
+    carePlans,
+    assessments,
+    pendingApprovalVisits,
+  ] = await Promise.all([
+    Model.ClientModel.find({ agencyId }).select('status dateOfBirth firstName lastName'),
+    Model.AgencyAccountModel.find({ agencyId, role: 'CAREGIVER' }).select('status fullName'),
+    Model.VisitModel.find({ agencyId, scheduledDate: todayKey }).sort({ scheduledStartAt: 1 }),
+    Model.VisitModel.find({
+      agencyId,
+      scheduledDate: { $gte: weekFrom, $lte: weekTo },
+    }).sort({ scheduledStartAt: 1 }),
+    Model.VisitModel.find({
+      agencyId,
+      scheduledDate: { $gte: prevWeekFrom, $lte: prevWeekTo },
+    }),
+    Model.ClientInvoiceModel.find({
+      agencyId,
+      status: { $in: ['Paid', 'Sent'] },
+      $or: [
+        { paidAt: { $gte: monthStart, $lt: nextMonthStart } },
+        { paidAt: null, createdAt: { $gte: monthStart, $lt: nextMonthStart } },
+      ],
+    }).select('total status paidAt createdAt'),
+    Model.ClientInvoiceModel.find({
+      agencyId,
+      status: { $in: ['Paid', 'Sent'] },
+      $or: [
+        { paidAt: { $gte: prevMonthStart, $lt: monthStart } },
+        { paidAt: null, createdAt: { $gte: prevMonthStart, $lt: monthStart } },
+      ],
+    }).select('total'),
+    Model.EvvEnrollmentModel.find({ agencyId }).select('status'),
+    Model.CarePlanModel.find({ agencyId }).select('status clientId planCode updatedAt'),
+    Model.ClientAssessmentModel.find({ agencyId }).select('status assessmentCode updatedAt'),
+    Model.VisitModel.find({
+      agencyId,
+      checkOutAt: { $ne: null },
+      approvalStatus: 'Pending',
+    }).sort({ checkOutAt: -1 }).limit(20).select('clientName caregiverName scheduledDate approvalStatus'),
+  ]);
+
+  const clientStats = {
+    total: clients.length,
+    active: clients.filter((c) => c.status === 'Active').length,
+    pending: clients.filter((c) => c.status === 'Pending').length,
+    inactive: clients.filter((c) => c.status === 'Inactive').length,
+  };
+
+  const caregiverStats = {
+    total: caregivers.length,
+    active: caregivers.filter((c) => c.status === 'Active').length,
+    pending: caregivers.filter((c) => c.status === 'Pending').length,
+    inactive: caregivers.filter((c) => c.status === 'Inactive').length,
+  };
+
+  const weekMinutes = weekVisits.reduce((sum, v) => {
+    if (v.checkInAt && v.checkOutAt) return sum + visitMinutes(v);
+    return sum;
+  }, 0);
+  const prevWeekMinutes = prevWeekVisits.reduce((sum, v) => {
+    if (v.checkInAt && v.checkOutAt) return sum + visitMinutes(v);
+    return sum;
+  }, 0);
+
+  const revenuePaid = monthInvoices
+    .filter((inv) => inv.status === 'Paid')
+    .reduce((s, inv) => s + (Number(inv.total) || 0), 0);
+  const revenueOpen = monthInvoices
+    .filter((inv) => inv.status === 'Sent')
+    .reduce((s, inv) => s + (Number(inv.total) || 0), 0);
+  const revenueMonth = revenuePaid + revenueOpen;
+  const prevRevenue = prevMonthInvoices.reduce((s, inv) => s + (Number(inv.total) || 0), 0);
+
+  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const visit_overview = dayLabels.map((day, idx) => {
+    const key = addDaysToDateKey(weekFrom, idx);
+    const dayVisits = weekVisits.filter((v) => v.scheduledDate === key);
+    return {
+      day,
+      date: key,
+      label: key.slice(5).replace('-', '/'),
+      completed: dayVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length,
+      scheduled: dayVisits.filter((v) => ['Scheduled', 'Late', 'InProgress'].includes(v.status) && !v.checkOutAt).length,
+      missed: dayVisits.filter((v) => v.status === 'Missed').length,
+    };
+  });
+
+  const statusColors = {
+    Active: '#22c55e',
+    Pending: '#3b82f6',
+    Inactive: '#f97316',
+  };
+  const clients_by_status = ['Active', 'Pending', 'Inactive'].map((label) => {
+    const value = clientStats[label.toLowerCase()] || 0;
+    return {
+      label,
+      value,
+      pct: clientStats.total ? Number(((value / clientStats.total) * 100).toFixed(1)) : 0,
+      color: statusColors[label],
+    };
+  });
+
+  const recent_visits = todayVisits.slice(0, 8).map((v) => {
+    const tz = resolveTimezone(v.timezone || displayTz);
+    return {
+      id: String(v._id),
+      client: v.clientName || 'Client',
+      initials: initialsFromName(v.clientName),
+      time: formatWallClockRange(v.scheduledStartAt, v.scheduledEndAt, tz),
+      caregiver: v.caregiverName || 'Unassigned',
+      status: displayAgencyVisitStatus(v),
+    };
+  });
+
+  const caregiverMap = new Map();
+  weekVisits.forEach((v) => {
+    if (!v.caregiverAccountId) return;
+    const id = String(v.caregiverAccountId);
+    if (!caregiverMap.has(id)) {
+      caregiverMap.set(id, {
+        id,
+        name: v.caregiverName || 'Caregiver',
+        initials: initialsFromName(v.caregiverName),
+        minutes: 0,
+        checkedIn: 0,
+        onTime: 0,
+      });
+    }
+    const row = caregiverMap.get(id);
+    if (v.checkInAt && v.checkOutAt) {
+      row.minutes += visitMinutes(v);
+      row.checkedIn += 1;
+      if (!v.lateCheckIn) row.onTime += 1;
+    }
+  });
+  const caregiver_activity = [...caregiverMap.values()]
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      initials: row.initials,
+      hours: Number((row.minutes / 60).toFixed(1)),
+      onTime: row.checkedIn ? Math.round((row.onTime / row.checkedIn) * 100) : 100,
+    }))
+    .sort((a, b) => b.hours - a.hours)
+    .slice(0, 6);
+
+  const birthdayKeys = upcomingBirthdayKeys(todayKey, 7);
+  const upcomingBirthdays = clients.filter((c) => {
+    const mmdd = mmddFromDob(c.dateOfBirth);
+    return mmdd && birthdayKeys.has(mmdd);
+  }).length;
+
+  const enrollmentPending = enrollments.filter((e) => ['Pending', 'Submitted', 'Rejected'].includes(e.status)).length;
+  const enrollmentSubmitted = enrollments.filter((e) => e.status === 'Submitted').length;
+  const missedToday = todayVisits.filter((v) => v.status === 'Missed').length;
+  const draftPlans = carePlans.filter((p) => p.status === 'Draft').length;
+  const openAssessments = assessments.filter((a) => ['Enquiry', 'Quoted'].includes(a.status)).length;
+
+  const alerts = [];
+  if (missedToday > 0) {
+    alerts.push({
+      id: 'missed-today',
+      text: `${missedToday} visit${missedToday === 1 ? '' : 's'} missed today`,
+      type: 'danger',
+      link: '/agency/schedule',
+    });
+  }
+  if (pendingApprovalVisits.length > 0) {
+    alerts.push({
+      id: 'pending-approval',
+      text: `${pendingApprovalVisits.length} visit${pendingApprovalVisits.length === 1 ? '' : 's'} awaiting EVV approval`,
+      type: 'warning',
+      link: '/agency/evv/dashboard',
+    });
+  }
+  if (enrollmentSubmitted > 0) {
+    alerts.push({
+      id: 'enroll-review',
+      text: `${enrollmentSubmitted} EVV enrollment${enrollmentSubmitted === 1 ? '' : 's'} ready for review`,
+      type: 'warning',
+      link: '/agency/evv/enrollments',
+    });
+  }
+  if (upcomingBirthdays > 0) {
+    alerts.push({
+      id: 'birthdays',
+      text: `${upcomingBirthdays} client${upcomingBirthdays === 1 ? '' : 's'} with upcoming birthdays`,
+      type: 'info',
+      link: '/agency/clients',
+    });
+  }
+
+  const tasks = [];
+  if (enrollmentSubmitted > 0) {
+    tasks.push({
+      id: 'task-enroll',
+      title: `Review ${enrollmentSubmitted} submitted EVV enrollment${enrollmentSubmitted === 1 ? '' : 's'}`,
+      due: 'Today',
+      priority: 'High',
+      done: false,
+      link: '/agency/evv/enrollments',
+    });
+  }
+  if (pendingApprovalVisits.length > 0) {
+    tasks.push({
+      id: 'task-approve',
+      title: `Approve ${pendingApprovalVisits.length} completed visit log${pendingApprovalVisits.length === 1 ? '' : 's'}`,
+      due: 'Today',
+      priority: 'High',
+      done: false,
+      link: '/agency/evv/dashboard',
+    });
+  }
+  if (draftPlans > 0) {
+    tasks.push({
+      id: 'task-plans',
+      title: `${draftPlans} draft care plan${draftPlans === 1 ? '' : 's'} need attention`,
+      due: 'This week',
+      priority: 'Medium',
+      done: false,
+      link: '/agency/care-plans',
+    });
+  }
+  if (openAssessments > 0) {
+    tasks.push({
+      id: 'task-assess',
+      title: `${openAssessments} open assessment${openAssessments === 1 ? '' : 's'} in pipeline`,
+      due: 'This week',
+      priority: 'Medium',
+      done: false,
+      link: '/agency/assessments',
+    });
+  }
+  if (enrollmentPending > 0 && enrollmentSubmitted === 0) {
+    tasks.push({
+      id: 'task-enroll-pending',
+      title: `${enrollmentPending} EVV enrollment${enrollmentPending === 1 ? '' : 's'} still pending caregiver/client action`,
+      due: 'This week',
+      priority: 'Low',
+      done: false,
+      link: '/agency/evv/enrollments',
+    });
+  }
+
+  return {
+    kpis: {
+      total_clients: {
+        value: clientStats.total,
+        subtitle: `${clientStats.active} active`,
+      },
+      active_caregivers: {
+        value: caregiverStats.active,
+        subtitle: `${caregiverStats.total} total`,
+      },
+      today_visits: {
+        value: todayVisits.length,
+        subtitle: `${todayVisits.filter((v) => displayAgencyVisitStatus(v) === 'Completed').length} completed`,
+        link: '/agency/schedule',
+      },
+      hours_this_week: {
+        value: formatDurationLabel(weekMinutes),
+        hours: Number((weekMinutes / 60).toFixed(1)),
+        trend: trendLabel(Math.round(weekMinutes), Math.round(prevWeekMinutes)),
+        trend_up: weekMinutes >= prevWeekMinutes,
+      },
+      revenue_month: {
+        value: `$${revenueMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        amount: Number(revenueMonth.toFixed(2)),
+        paid: Number(revenuePaid.toFixed(2)),
+        open: Number(revenueOpen.toFixed(2)),
+        trend: trendLabel(Math.round(revenueMonth), Math.round(prevRevenue)),
+        trend_up: revenueMonth >= prevRevenue,
+      },
+    },
+    clients_by_status,
+    clients_total: clientStats.total,
+    visit_overview,
+    week: { from: weekFrom, to: weekTo },
+    recent_visits,
+    caregiver_activity,
+    tasks: tasks.slice(0, 5),
+    alerts: alerts.slice(0, 5),
+    widgets: {
+      upcoming_birthdays: upcomingBirthdays,
+      pending_evv_approvals: pendingApprovalVisits.length,
+      pending_enrollments: enrollmentPending,
+      submitted_enrollments: enrollmentSubmitted,
+    },
+  };
+};
+
 const WEEKDAY_OFFSET = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 
 /** Monday–Sunday date keys for the week containing `dateKey` in `timeZone`. */
@@ -1833,6 +2183,7 @@ module.exports = {
   regenerateScheduleVisits,
   generateVisitsForSchedule,
   getEvvDashboard,
+  getAgencyDashboard,
   getCaregiverDashboard,
   getOrCreateEvvSettings,
   computeLiveElapsedSeconds,
