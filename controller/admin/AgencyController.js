@@ -10,10 +10,28 @@ module.exports.getAll = async (req, res, next) => {
   }
 };
 
+module.exports.getOptions = async (req, res, next) => {
+  try {
+    const data = await AgencyService.getOptions();
+    return res.success(constants.MESSAGE.LIST, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.getById = async (req, res, next) => {
   try {
     const data = await AgencyService.getById(req.params.id);
     return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getCaregivers = async (req, res, next) => {
+  try {
+    const data = await AgencyService.getCaregivers(req.params.id, req.query);
+    return res.success(constants.MESSAGE.LIST, data);
   } catch (error) {
     next(error);
   }

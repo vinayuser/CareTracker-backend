@@ -49,6 +49,8 @@ router.get('/subscription-plans/active', Controller.SubscriptionPlanController.g
 
 // Super admin — /api/admin/*
 router.get('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.getAll);
+router.get('/admin/agencies/options', Auth.authenticate('super_admin'), Controller.AgencyController.getOptions);
+router.get('/admin/agencies/:id/caregivers', Auth.authenticate('super_admin'), Controller.AgencyController.getCaregivers);
 router.get('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.getById);
 router.post('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.create);
 router.put('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.update);
