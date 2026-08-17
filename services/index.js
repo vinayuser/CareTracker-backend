@@ -1,5 +1,6 @@
 module.exports.AdminAuthService = require('./admin/adminAuth.service');
 module.exports.AgencyService = require('./admin/agency.service');
+module.exports.AdminUsersService = require('./admin/adminUsers.service');
 module.exports.SubscriptionPlanService = require('./admin/subscriptionPlan.service');
 module.exports.InvitationService = require('./admin/invitation.service');
 module.exports.RegistrationService = require('./registration/registration.service');

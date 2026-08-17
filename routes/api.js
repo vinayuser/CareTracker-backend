@@ -56,6 +56,11 @@ router.post('/admin/agencies', Auth.authenticate('super_admin'), Controller.Agen
 router.put('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.update);
 router.delete('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.remove);
 
+router.get('/admin/users/stats', Auth.authenticate('super_admin'), Controller.AdminUsersController.getStats);
+router.get('/admin/users', Auth.authenticate('super_admin'), Controller.AdminUsersController.getUsers);
+router.get('/admin/users/schedules', Auth.authenticate('super_admin'), Controller.AdminUsersController.getSchedules);
+router.get('/admin/users/evv-forms', Auth.authenticate('super_admin'), Controller.AdminUsersController.getEvvForms);
+
 router.get('/admin/subscription-plans', Auth.authenticate('super_admin'), Controller.SubscriptionPlanController.getAll);
 router.get('/admin/subscription-plans/:id', Auth.authenticate('super_admin'), Controller.SubscriptionPlanController.getById);
 router.post('/admin/subscription-plans', Auth.authenticate('super_admin'), Controller.SubscriptionPlanController.create);
