@@ -2,6 +2,7 @@ module.exports = {
   AdminAuthController: require('./admin/AdminAuthController'),
   AgencyController: require('./admin/AgencyController'),
   AdminUsersController: require('./admin/AdminUsersController'),
+  AdminTeamController: require('./admin/AdminTeamController'),
   SubscriptionPlanController: require('./admin/SubscriptionPlanController'),
   InvitationController: require('./admin/InvitationController'),
   RegistrationController: require('./registration/RegistrationController'),

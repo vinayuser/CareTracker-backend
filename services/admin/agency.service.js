@@ -1,6 +1,8 @@
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const fs = require('fs/promises');
+const path = require('path');
 
 const formatPlan = (plan) => {
   if (!plan) return null;
@@ -285,14 +287,309 @@ const getById = async (id) => {
   return formatted;
 };
 
+const addBillingCycle = (date, billingCycle = 'monthly') => {
+  const next = new Date(date);
+  if (billingCycle === 'yearly') next.setUTCFullYear(next.getUTCFullYear() + 1);
+  else next.setUTCMonth(next.getUTCMonth() + 1);
+  return next;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const getNextRenewalDate = (startDate, billingCycle = 'monthly', lastPaidAt = null) => {
+  const origin = parseDateValue(lastPaidAt) || parseDateValue(startDate);
+  if (!origin) return null;
+  let next = addBillingCycle(origin, billingCycle);
+  const now = new Date();
+  let guard = 0;
+  while (next <= now && guard < 120) {
+    next = addBillingCycle(next, billingCycle);
+    guard += 1;
+  }
+  return next;
+};
+
+const daysUntilDate = (date) => {
+  const target = parseDateValue(date);
+  if (!target) return null;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(target);
+  end.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+};
+
+const paymentMethodLabel = (method) => {
+  if (!method?.last4) return '';
+  const brand = method.brand || 'Card';
+  return `${brand} ending in ${method.last4}`;
+};
+
+const formatPaymentMethod = (method) => {
+  if (!method) return null;
+  const obj = typeof method.toObject === 'function' ? method.toObject() : { ...method };
+  return {
+    id: obj._id ? String(obj._id) : obj.id || null,
+    brand: obj.brand || '',
+    last4: obj.last4 || '',
+    expMonth: obj.expMonth || '',
+    expYear: obj.expYear || '',
+    nameOnCard: obj.nameOnCard || '',
+    isDefault: Boolean(obj.isDefault),
+    label: paymentMethodLabel(obj),
+  };
+};
+
+const generateInvoiceCode = async (agencyId) => {
+  const count = await Model.AgencySubscriptionInvoiceModel.countDocuments({ agencyId });
+  const digits = String(agencyId).replace(/\D/g, '').slice(-4).padStart(4, '0');
+  return `INV-${digits}-${String(count + 1).padStart(4, '0')}`;
+};
+
+const roundMoney = (value) => Number(Number(value || 0).toFixed(2));
+
+const uploadsRoot = path.join(__dirname, '../../uploads');
+
+const resolveUploadPath = (stored) => {
+  if (!stored) return null;
+  let clean = String(stored).replace(/^\/+/, '');
+  if (clean.startsWith('uploads/')) clean = clean.slice('uploads/'.length);
+  if (clean.startsWith('api/uploads/')) clean = clean.slice('api/uploads/'.length);
+  return path.join(uploadsRoot, clean);
+};
+
+const getStorageUsage = async (agencyId) => {
+  const rows = await Model.CandidateFormSubmissionModel.find({
+    agencyId,
+    filledPdfPath: { $nin: [null, ''] },
+  }).select('filledPdfPath').lean();
+
+  const sizes = await Promise.all(rows.map(async (row) => {
+    const full = resolveUploadPath(row.filledPdfPath);
+    if (!full) return 0;
+    try {
+      const st = await fs.stat(full);
+      return st.isFile() ? st.size : 0;
+    } catch {
+      return 0;
+    }
+  }));
+
+  return sizes.reduce((sum, size) => sum + size, 0);
+};
+
+const formatInvoice = (invoice) => {
+  const client = functions.toClientDoc(invoice);
+  return {
+    id: client.id,
+    invoiceCode: client.invoiceCode,
+    invoiceDate: client.invoiceDate,
+    dueDate: client.dueDate,
+    planName: client.planName || '',
+    billingCycle: client.billingCycle || '',
+    planAmount: client.planAmount || 0,
+    addOnAmount: client.addOnAmount || 0,
+    taxAmount: client.taxAmount || 0,
+    taxRate: client.taxRate || 0,
+    total: client.total || 0,
+    status: client.status,
+    paidAt: client.paidAt,
+    paymentMethodLabel: client.paymentMethodLabel || '',
+    transactionId: client.transactionId || '',
+  };
+};
+
+const recordSubscriptionPayment = async (agencyId, {
+  plan,
+  amount,
+  transactionId = '',
+  paymentMethod = null,
+  status = 'Paid',
+  paidAt = null,
+} = {}) => {
+  const agency = await Model.AgencyModel.findById(agencyId);
+  if (!agency) throw new Error('Agency Not Found');
+
+  const planAmount = roundMoney(amount ?? plan?.price ?? 0);
+  const addOnAmount = roundMoney(agency.addOnAmount || 0);
+  const taxRate = Number(agency.taxRate || 0);
+  const taxAmount = roundMoney((planAmount + addOnAmount) * taxRate);
+  const total = roundMoney(planAmount + addOnAmount + taxAmount);
+  const now = paidAt ? parseDateValue(paidAt) || new Date() : new Date();
+  const due = new Date(now);
+  due.setUTCDate(due.getUTCDate() + 7);
+
+  if (paymentMethod?.last4) {
+    const methods = Array.isArray(agency.paymentMethods) ? agency.paymentMethods : [];
+    const exists = methods.some((m) => m.last4 === paymentMethod.last4 && m.brand === paymentMethod.brand);
+    if (!exists) {
+      if (paymentMethod.isDefault !== false) {
+        methods.forEach((m) => { m.isDefault = false; });
+      }
+      methods.push({
+        brand: paymentMethod.brand || 'Card',
+        last4: paymentMethod.last4,
+        expMonth: paymentMethod.expMonth || '',
+        expYear: paymentMethod.expYear || '',
+        nameOnCard: paymentMethod.nameOnCard || '',
+        isDefault: paymentMethod.isDefault !== false,
+      });
+      agency.paymentMethods = methods;
+      await agency.save();
+    }
+  }
+
+  const invoice = await Model.AgencySubscriptionInvoiceModel.create({
+    agencyId: agency._id,
+    invoiceCode: await generateInvoiceCode(agency._id),
+    invoiceDate: now,
+    dueDate: due,
+    planName: plan?.name || '',
+    billingCycle: plan?.billingCycle || 'monthly',
+    planAmount,
+    addOnAmount,
+    taxAmount,
+    taxRate,
+    total,
+    status,
+    paidAt: status === 'Paid' ? now : null,
+    paymentMethodLabel: paymentMethodLabel(paymentMethod) || paymentMethodLabel(
+      (agency.paymentMethods || []).find((m) => m.isDefault) || agency.paymentMethods?.[0],
+    ),
+    transactionId: transactionId || '',
+  });
+
+  return formatInvoice(invoice);
+};
+
+const getBilling = async (agencyId) => {
+  const agency = await Model.AgencyModel.findById(agencyId);
+  if (!agency) throw new Error('Agency Not Found');
+
+  const planDoc = agency.subscriptionPlanId
+    ? await Model.SubscriptionPlanModel.findById(agency.subscriptionPlanId)
+    : null;
+  const plan = formatPlan(planDoc);
+  const [usage, storageUsed, invoiceDocs] = await Promise.all([
+    getLiveUsage(agency._id, agency),
+    getStorageUsage(agency._id),
+    Model.AgencySubscriptionInvoiceModel.find({ agencyId: agency._id })
+      .sort({ invoiceDate: -1, createdAt: -1 })
+      .limit(20)
+      .lean(),
+  ]);
+
+  let invoices = invoiceDocs.map(formatInvoice);
+  if (plan && invoices.length === 0) {
+    const seeded = await recordSubscriptionPayment(agency._id, {
+      plan,
+      amount: plan.price,
+      status: agency.status === 'Active' ? 'Paid' : 'Pending',
+      paidAt: agency.createdAt || agency.registeredAt,
+      transactionId: `signup_${agency._id}`,
+    });
+    invoices = [seeded];
+  }
+
+  const lastPaid = invoices.find((inv) => inv.status === 'Paid');
+  const pending = invoices.find((inv) => inv.status === 'Pending' || inv.status === 'Overdue');
+  const startDate = agency.registeredAt || agency.createdAt;
+  const nextRenewalDate = getNextRenewalDate(
+    startDate,
+    plan?.billingCycle,
+    lastPaid?.paidAt || lastPaid?.invoiceDate,
+  );
+
+  const planAmount = roundMoney(pending?.planAmount ?? plan?.price ?? 0);
+  const addOnAmount = roundMoney(pending?.addOnAmount ?? agency.addOnAmount ?? 0);
+  const taxRate = Number(pending?.taxRate ?? agency.taxRate ?? 0);
+  const taxAmount = roundMoney(pending?.taxAmount ?? ((planAmount + addOnAmount) * taxRate));
+  const total = roundMoney(pending?.total ?? (planAmount + addOnAmount + taxAmount));
+
+  const paymentMethods = (agency.paymentMethods || []).map(formatPaymentMethod).filter(Boolean);
+  const defaultMethod = paymentMethods.find((m) => m.isDefault) || paymentMethods[0] || null;
+  const features = Array.isArray(plan?.features) && plan.features.length
+    ? plan.features
+    : [...(plan?.selectedFeatures || []), ...(plan?.customFeatures || [])].filter(Boolean);
+
+  return {
+    plan,
+    features,
+    subscription: {
+      startDate: startDate || null,
+      nextRenewalDate,
+      daysLeft: daysUntilDate(nextRenewalDate),
+      autoRenewal: agency.autoRenewal !== false && agency.status === 'Active' && Boolean(plan),
+      status: agency.status || '',
+    },
+    usage: {
+      clients: { used: usage.clients || 0, limit: plan?.limits?.maxClients ?? null },
+      caregivers: { used: usage.caregivers || 0, limit: plan?.limits?.maxCaregivers ?? null },
+      storage: { used: storageUsed, limit: plan?.limits?.maxStorage ?? null },
+    },
+    summary: {
+      planAmount,
+      addOnAmount,
+      taxAmount,
+      taxRate,
+      total,
+      defaultPaymentMethod: defaultMethod,
+      hasPendingInvoice: Boolean(pending),
+    },
+    invoices: invoices.slice(0, 5),
+    invoiceTotal: invoices.length,
+    paymentMethods,
+    payments: invoices
+      .filter((inv) => inv.status === 'Paid')
+      .slice(0, 6)
+      .map((inv) => ({
+        id: inv.id,
+        date: inv.paidAt || inv.invoiceDate,
+        amount: inv.total,
+        label: 'Payment Successful',
+        paymentMethodLabel: inv.paymentMethodLabel || '',
+      })),
+  };
+};
+
 const create = async (payload) => {
   const agency = await Model.AgencyModel.create(payload);
+  if (payload.subscriptionPlanId) {
+    const plan = await Model.SubscriptionPlanModel.findById(payload.subscriptionPlanId);
+    if (plan) {
+      await recordSubscriptionPayment(agency._id, {
+        plan,
+        amount: plan.price,
+        status: 'Pending',
+        transactionId: `admin_${Date.now()}`,
+      });
+    }
+  }
   return formatAgency(agency);
 };
 
 const update = async (id, payload) => {
+  const previous = await Model.AgencyModel.findById(id).select('subscriptionPlanId');
   const agency = await Model.AgencyModel.findByIdAndUpdate(id, payload, { new: true });
   if (!agency) throw new Error('Agency Not Found');
+
+  const nextPlanId = agency.subscriptionPlanId ? String(agency.subscriptionPlanId) : '';
+  const prevPlanId = previous?.subscriptionPlanId ? String(previous.subscriptionPlanId) : '';
+  if (nextPlanId && nextPlanId !== prevPlanId) {
+    const plan = await Model.SubscriptionPlanModel.findById(nextPlanId);
+    if (plan) {
+      await recordSubscriptionPayment(agency._id, {
+        plan,
+        amount: plan.price,
+        status: 'Pending',
+        transactionId: `plan_change_${Date.now()}`,
+      });
+    }
+  }
   return getById(id);
 };
 
@@ -307,6 +604,8 @@ module.exports = {
   getOptions,
   getById,
   getCaregivers,
+  getBilling,
+  recordSubscriptionPayment,
   create,
   update,
   remove,

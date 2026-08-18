@@ -51,6 +51,20 @@ router.get('/subscription-plans/active', Controller.SubscriptionPlanController.g
 router.get('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.getAll);
 router.get('/admin/agencies/options', Auth.authenticate('super_admin'), Controller.AgencyController.getOptions);
 router.get('/admin/agencies/:id/caregivers', Auth.authenticate('super_admin'), Controller.AgencyController.getCaregivers);
+router.get('/admin/agencies/:id/billing', Auth.authenticate('super_admin'), Controller.AgencyController.getBilling);
+router.get('/admin/agencies/:id/documents', Auth.authenticate('super_admin'), Controller.AgencyController.getDocuments);
+router.post(
+  '/admin/agencies/:id/documents',
+  Auth.authenticate('super_admin'),
+  require('../middleware/agencyDocumentUpload').uploadDocument,
+  Controller.AgencyController.createDocument,
+);
+router.put('/admin/agencies/:id/documents/:docId', Auth.authenticate('super_admin'), Controller.AgencyController.updateDocument);
+router.delete('/admin/agencies/:id/documents/:docId', Auth.authenticate('super_admin'), Controller.AgencyController.removeDocument);
+router.get('/admin/agencies/:id/notes', Auth.authenticate('super_admin'), Controller.AgencyController.getNotes);
+router.post('/admin/agencies/:id/notes', Auth.authenticate('super_admin'), Controller.AgencyController.createNote);
+router.put('/admin/agencies/:id/notes/:noteId', Auth.authenticate('super_admin'), Controller.AgencyController.updateNote);
+router.delete('/admin/agencies/:id/notes/:noteId', Auth.authenticate('super_admin'), Controller.AgencyController.removeNote);
 router.get('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.getById);
 router.post('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.create);
 router.put('/admin/agencies/:id', Auth.authenticate('super_admin'), Controller.AgencyController.update);
@@ -60,6 +74,14 @@ router.get('/admin/users/stats', Auth.authenticate('super_admin'), Controller.Ad
 router.get('/admin/users', Auth.authenticate('super_admin'), Controller.AdminUsersController.getUsers);
 router.get('/admin/users/schedules', Auth.authenticate('super_admin'), Controller.AdminUsersController.getSchedules);
 router.get('/admin/users/evv-forms', Auth.authenticate('super_admin'), Controller.AdminUsersController.getEvvForms);
+
+router.get('/admin/team/stats', Auth.authenticate('super_admin'), Controller.AdminTeamController.getStats);
+router.get('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.getAll);
+router.post('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.create);
+router.put('/admin/team/:id', Auth.authenticate('super_admin'), Controller.AdminTeamController.update);
+router.patch('/admin/team/:id/status', Auth.authenticate('super_admin'), Controller.AdminTeamController.setStatus);
+router.patch('/admin/team/:id/password', Auth.authenticate('super_admin'), Controller.AdminTeamController.setPassword);
+router.delete('/admin/team/:id', Auth.authenticate('super_admin'), Controller.AdminTeamController.remove);
 
 router.get('/admin/subscription-plans', Auth.authenticate('super_admin'), Controller.SubscriptionPlanController.getAll);
 router.get('/admin/subscription-plans/:id', Auth.authenticate('super_admin'), Controller.SubscriptionPlanController.getById);

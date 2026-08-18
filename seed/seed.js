@@ -116,6 +116,7 @@ async function seedDatabase() {
       name: 'Super Admin',
       email: 'admin@caretraker.com',
       role: 'SUPER_ADMIN',
+      status: 'Active',
       password: 'placeholder',
     });
     await admin.setPassword('Admin@123');

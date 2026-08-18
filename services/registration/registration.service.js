@@ -9,6 +9,29 @@ const {
 } = require('../common/mail.service');
 const { getAdminEmails, agencyPortalUrl } = require('../common/notifyHelpers');
 
+const detectCardBrand = (digits) => {
+  if (/^4/.test(digits)) return 'Visa';
+  if (/^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)) return 'Mastercard';
+  if (/^3[47]/.test(digits)) return 'American Express';
+  if (/^6/.test(digits)) return 'Discover';
+  return 'Card';
+};
+
+const sanitizePaymentMethod = (payload = {}) => {
+  const digits = String(payload.cardNumber || payload.last4 || '').replace(/\D/g, '');
+  const last4 = String(payload.last4 || digits.slice(-4) || '').slice(-4);
+  if (!last4) return null;
+  const [expMonth, expYear] = String(payload.expiry || '').split('/');
+  return {
+    brand: payload.brand || detectCardBrand(digits),
+    last4,
+    expMonth: String(payload.expMonth || expMonth || '').trim(),
+    expYear: String(payload.expYear || expYear || '').trim(),
+    nameOnCard: String(payload.nameOnCard || '').trim(),
+    isDefault: true,
+  };
+};
+
 const checkUserIdAvailability = async (userId) => {
   const existing = await Model.AgencyAccountModel.findOne({
     userId: userId.toLowerCase(),
@@ -149,6 +172,20 @@ const submitRegistration = async (req, payload) => {
   }
 
   const ownerEmail = (payload.email || invitation?.email || '').toLowerCase();
+  const paymentMethod = payload.paymentMethod || sanitizePaymentMethod(payload);
+  try {
+    await AgencyService.recordSubscriptionPayment(agency._id, {
+      plan,
+      amount: payload.amount || plan.price,
+      transactionId: payload.transactionId || `reg_${Date.now()}`,
+      paymentMethod,
+      status: 'Paid',
+      paidAt: new Date(),
+    });
+  } catch (err) {
+    console.error('[registration] billing record failed', err.message);
+  }
+
   await notifyRegistrationComplete(req, {
     agency,
     plan,
@@ -165,13 +202,16 @@ const processPayment = async (payload) => {
   const plan = await Model.SubscriptionPlanModel.findById(payload.planId);
   if (!plan) throw new Error('Subscription Plan Not Found');
 
+  const paymentMethod = sanitizePaymentMethod(payload);
+
   return {
     planId: String(plan._id),
     planName: plan.name,
     amount: payload.amount || plan.price,
     status: 'paid',
-    transactionId: `demo_${Date.now()}`,
-    billingCycle: plan.billingCycle || plan.billing_cycle || 'month',
+    transactionId: `pay_${Date.now()}`,
+    billingCycle: plan.billingCycle || plan.billing_cycle || 'monthly',
+    paymentMethod,
   };
 };
 

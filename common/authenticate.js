@@ -45,7 +45,7 @@ module.exports.authenticate = (...args) => async (req, res, next) => {
 
     if (decoded != null && roles.includes(PORTAL_ROLES.super_admin)) {
       const admin = await Model.AdminModel.findOne({ _id: decoded._id });
-      if (admin && jtiMatches(decoded, admin)) {
+      if (admin && admin.status !== 'Inactive' && jtiMatches(decoded, admin)) {
         role = PORTAL_ROLES.super_admin;
         doc = admin;
       }

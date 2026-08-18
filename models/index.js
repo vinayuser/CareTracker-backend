@@ -24,4 +24,7 @@ module.exports = {
   VisitModel: require('./VisitModel'),
   EvvSettingsModel: require('./EvvSettingsModel'),
   ClientInvoiceModel: require('./ClientInvoiceModel'),
+  AgencySubscriptionInvoiceModel: require('./AgencySubscriptionInvoiceModel'),
+  AgencyDocumentModel: require('./AgencyDocumentModel'),
+  AgencyNoteModel: require('./AgencyNoteModel'),
 };

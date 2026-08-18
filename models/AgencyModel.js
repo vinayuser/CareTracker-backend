@@ -10,6 +10,18 @@ const UsageSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const PaymentMethodSchema = new mongoose.Schema(
+  {
+    brand: { type: String, default: '' },
+    last4: { type: String, default: '' },
+    expMonth: { type: String, default: '' },
+    expYear: { type: String, default: '' },
+    nameOnCard: { type: String, default: '' },
+    isDefault: { type: Boolean, default: false },
+  },
+  { _id: true },
+);
+
 const AgencySchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -32,6 +44,10 @@ const AgencySchema = new mongoose.Schema(
     },
     subscriptionPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubscriptionPlan' },
     usage: { type: UsageSchema, default: () => ({}) },
+    autoRenewal: { type: Boolean, default: true },
+    taxRate: { type: Number, default: 0 },
+    addOnAmount: { type: Number, default: 0 },
+    paymentMethods: { type: [PaymentMethodSchema], default: [] },
     registeredAt: { type: String, default: () => new Date().toISOString().split('T')[0] },
     iconColor: { type: String, default: 'bg-blue-100 text-blue-600' },
   },

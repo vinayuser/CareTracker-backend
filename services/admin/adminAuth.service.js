@@ -3,7 +3,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const Auth = require('../../common/authenticate');
-const { sanitizeModuleAccess, DEFAULT_HR_MODULES } = require('../../common/agencyModules');
+const { sanitizeModuleAccess, DEFAULT_ADMIN_MODULES, isSuperAdminRole } = require('../../common/adminModules');
 const { sendPasswordResetEmail } = require('../common/mail.service');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -11,10 +11,14 @@ const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const createResetToken = () => crypto.randomBytes(32).toString('hex');
 
 const formatAdminUser = (admin) => ({
-  id: String(admin._id),
+  id: String(admin._id || admin.id),
   name: admin.name,
   email: admin.email,
   role: admin.role || 'SUPER_ADMIN',
+  status: admin.status || 'Active',
+  moduleAccess: isSuperAdminRole(admin.role)
+    ? []
+    : (admin.moduleAccess?.length ? sanitizeModuleAccess(admin.moduleAccess) : [...DEFAULT_ADMIN_MODULES]),
 });
 
 const splitName = (fullName = '') => {
@@ -95,6 +99,7 @@ const login = async (req) => {
 
   const admin = await Model.AdminModel.findOne({ email: loginId });
   if (admin) {
+    if (admin.status === 'Inactive') throw new Error('Account is inactive');
     await admin.authenticate(req.body.password);
     admin.jti = functions.generateRandomStringAndNumbers(20);
     await admin.save();

@@ -28,9 +28,17 @@ const AdminModelSchema = new Schema(
     role: {
       type: String,
       enum: ['SUPER_ADMIN', 'ADMIN'],
-      default: 'SUPER_ADMIN',
+      default: 'ADMIN',
       required: true,
     },
+    status: {
+      type: String,
+      enum: ['Active', 'Inactive'],
+      default: 'Active',
+      index: true,
+    },
+    moduleAccess: [{ type: String }],
+    createdBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
     passwordResetToken: { type: String, default: '', index: true },
     passwordResetExpires: { type: Date, default: null },
   },
