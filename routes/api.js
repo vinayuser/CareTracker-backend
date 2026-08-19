@@ -75,6 +75,14 @@ router.get('/admin/users', Auth.authenticate('super_admin'), Controller.AdminUse
 router.get('/admin/users/schedules', Auth.authenticate('super_admin'), Controller.AdminUsersController.getSchedules);
 router.get('/admin/users/evv-forms', Auth.authenticate('super_admin'), Controller.AdminUsersController.getEvvForms);
 
+router.get('/admin/clients/stats', Auth.authenticate('super_admin'), Controller.AdminClientsController.getStats);
+router.get('/admin/clients', Auth.authenticate('super_admin'), Controller.AdminClientsController.getClients);
+router.get('/admin/clients/:id/overview', Auth.authenticate('super_admin'), Controller.AdminClientsController.getOverview);
+
+router.get('/admin/caregivers/stats', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getStats);
+router.get('/admin/caregivers', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getCaregivers);
+router.get('/admin/caregivers/:id/overview', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getOverview);
+
 router.get('/admin/team/stats', Auth.authenticate('super_admin'), Controller.AdminTeamController.getStats);
 router.get('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.getAll);
 router.post('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.create);
