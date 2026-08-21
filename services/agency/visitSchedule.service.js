@@ -21,6 +21,7 @@ const {
 
 const DEFAULT_HORIZON_DAYS = 42;
 const LATE_EXTRA_MS = LATE_CHECK_IN_EXTRA_MINUTES * 60 * 1000;
+const { getBlockingHolidayMap, leaveFieldsForDate } = require('./holidayLeaveVisits.service');
 
 const resolveLateCheckInUntil = (visit) => {
   if (visit.lateCheckInUntil) return new Date(visit.lateCheckInUntil);
@@ -186,6 +187,10 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
   }
   item.ended = Boolean(item.checkOutAt);
   item.canCheckIn = !item.checkInAt && ['Scheduled', 'Late', 'Missed'].includes(item.status);
+  if (item.status === 'Leave') {
+    item.canCheckIn = false;
+    item.clockBlockReason = constants.MESSAGE.VISIT.ON_LEAVE;
+  }
   item.canCheckOut = Boolean(item.checkInAt) && !item.checkOutAt && ['InProgress', 'Exception'].includes(item.status);
   if (item.checkOutAt && (!item.approvalStatus || item.approvalStatus === 'None')) {
     item.approvalStatus = 'Pending';
@@ -207,7 +212,9 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
     && now >= earliest
     && (!lateUntil || now <= lateUntil),
   );
-  if (item.canCheckIn && earliest && now < earliest) {
+  if (item.status === 'Leave') {
+    item.clockBlockReason = constants.MESSAGE.VISIT.ON_LEAVE;
+  } else if (item.canCheckIn && earliest && now < earliest) {
     item.clockBlockReason = constants.MESSAGE.VISIT.TOO_EARLY;
   } else if (item.canCheckIn && lateUntil && now > lateUntil) {
     item.clockBlockReason = constants.MESSAGE.VISIT.TOO_LATE;
@@ -284,6 +291,12 @@ const buildVisitPayload = (schedule, dateKey, visitCode) => {
   };
 };
 
+const applyLeaveToPayload = (payload, holidayMap, dateKey) => {
+  const leave = leaveFieldsForDate(holidayMap, dateKey);
+  if (!leave) return payload;
+  return { ...payload, ...leave };
+};
+
 /** Recompute UTC windows for future Scheduled visits after time/timezone edits */
 const refreshFutureVisitWindows = async (schedule) => {
   const tz = resolveTimezone(schedule.timezone);
@@ -318,6 +331,11 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
       : dateKeyInZone(fromDate, tz))
     : dateKeyInZone(new Date(), tz);
   const created = [];
+  const holidayMap = await getBlockingHolidayMap(
+    schedule.agencyId,
+    startKey,
+    addDaysToDateKey(startKey, days - 1),
+  );
 
   for (let i = 0; i < days; i += 1) {
     const dateKey = addDaysToDateKey(startKey, i);
@@ -334,7 +352,9 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
     for (let attempt = 0; attempt < 8; attempt += 1) {
       try {
         const visitCode = await generateVisitCode(schedule.agencyId);
-        visit = await Model.VisitModel.create(buildVisitPayload(schedule, dateKey, visitCode));
+        visit = await Model.VisitModel.create(
+          applyLeaveToPayload(buildVisitPayload(schedule, dateKey, visitCode), holidayMap, dateKey),
+        );
         break;
       } catch (err) {
         if (!isDuplicateKeyError(err) || !/visitCode/i.test(String(err?.message || ''))) {
@@ -854,6 +874,9 @@ const checkInVisit = async (req, visitId, payload = {}) => {
     caregiverAccountId: caregiverId,
   });
   if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+  if (visit.status === 'Leave') {
+    throw new Error(constants.MESSAGE.VISIT.ON_LEAVE);
+  }
   if (visit.checkInAt) {
     throw new Error(constants.MESSAGE.VISIT.INVALID_CHECK_IN);
   }

@@ -5,6 +5,7 @@ const { parseExperience, buildUploadUrl } = require('../../common/candidateHelpe
 const { getAgencyId, getAgencyStagesForJob } = require('./jobPost.service');
 const CandidateFormService = require('./candidateForm.service');
 const InterviewFeedbackService = require('./interviewFeedback.service');
+const LeavePolicyService = require('./leavePolicy.service');
 const {
   sendCandidateApplicationEmail,
   sendCaregiverWelcomeEmail,
@@ -399,6 +400,11 @@ const transferHiredApplicationToCaregiver = async (req, app, job) => {
 
   app.caregiverAccountId = caregiverAccount._id;
   await app.save();
+  try {
+    await LeavePolicyService.ensureCaregiverLeaveBalance(agencyId, caregiverAccount._id);
+  } catch (err) {
+    console.error('[hire] leave balance seed failed', err.message);
+  }
 
   const binding = (job.hiredBindings || []).find(
     (b) => String(b.applicationId) === String(app._id),

@@ -17,4 +17,6 @@ module.exports = {
   VisitSchedule: require('./agency/visitSchedule'),
   EvvSettings: require('./agency/evvSettings'),
   ClientInvoice: require('./agency/clientInvoice'),
+  Holiday: require('./agency/holiday'),
+  Leave: require('./agency/leave'),
 };

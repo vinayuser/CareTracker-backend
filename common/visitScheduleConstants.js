@@ -12,6 +12,7 @@ const VISIT_STATUSES = [
   'Late',
   'Cancelled',
   'Exception',
+  'Leave',
 ];
 const VISIT_APPROVAL_STATUSES = ['None', 'Pending', 'Approved', 'Rejected'];
 

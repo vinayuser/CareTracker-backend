@@ -61,6 +61,10 @@ const VisitSchema = new mongoose.Schema(
     lateCheckIn: { type: Boolean, default: false },
     exceptionReason: { type: String, default: '' },
     notes: { type: String, default: '' },
+    leaveSource: { type: String, enum: ['', 'holiday', 'request'], default: '' },
+    holidayId: { type: mongoose.Schema.Types.ObjectId, ref: 'Holiday', default: null },
+    leaveRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'LeaveRequest', default: null },
+    leaveLabel: { type: String, default: '' },
 
     // Server-authoritative timer (ShiftNPay-style)
     isTimerRunning: { type: Boolean, default: false, index: true },

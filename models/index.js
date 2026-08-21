@@ -27,4 +27,8 @@ module.exports = {
   AgencySubscriptionInvoiceModel: require('./AgencySubscriptionInvoiceModel'),
   AgencyDocumentModel: require('./AgencyDocumentModel'),
   AgencyNoteModel: require('./AgencyNoteModel'),
+  HolidayModel: require('./HolidayModel'),
+  LeavePolicyModel: require('./LeavePolicyModel'),
+  CaregiverLeaveBalanceModel: require('./CaregiverLeaveBalanceModel'),
+  LeaveRequestModel: require('./LeaveRequestModel'),
 };

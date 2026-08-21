@@ -137,6 +137,18 @@ router.put('/agency/caregivers/:id', Auth.authenticate('agency_owner', 'hr'), Co
 router.patch('/agency/caregivers/:id/status', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.updateStatus);
 router.patch('/agency/caregivers/:id/password', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.setPassword);
 router.post('/agency/caregivers/:id/email', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyCaregiverController.sendEmail);
+router.get('/agency/caregivers/:id/leave-balance', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.getCaregiverBalance);
+
+router.get('/agency/holidays', Auth.authenticate('agency_owner', 'hr'), Controller.HolidayController.list);
+router.post('/agency/holidays', Auth.authenticate('agency_owner', 'hr'), Controller.HolidayController.create);
+router.put('/agency/holidays/:id', Auth.authenticate('agency_owner', 'hr'), Controller.HolidayController.update);
+router.delete('/agency/holidays/:id', Auth.authenticate('agency_owner', 'hr'), Controller.HolidayController.remove);
+
+router.get('/agency/leave-policy', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.getPolicy);
+router.put('/agency/leave-policy', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.savePolicy);
+router.get('/agency/leave-requests', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.listRequests);
+router.post('/agency/leave-requests/:id/approve', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.approve);
+router.post('/agency/leave-requests/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.LeaveController.reject);
 
 router.get('/agency/clients/options', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getOptions);
 router.get('/agency/clients/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientController.getStats);
@@ -277,6 +289,9 @@ router.get('/caregiver/visits', Auth.authenticate('caregiver'), Controller.Visit
 router.get('/caregiver/visits/:id/timer', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getVisitTimer);
 router.post('/caregiver/visits/:id/check-in', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkIn);
 router.post('/caregiver/visits/:id/check-out', Auth.authenticate('caregiver'), Controller.VisitScheduleController.checkOut);
+router.get('/caregiver/leaves', Auth.authenticate('caregiver'), Controller.LeaveController.myLeaves);
+router.post('/caregiver/leaves', Auth.authenticate('caregiver'), Controller.LeaveController.apply);
+router.post('/caregiver/leaves/:id/cancel', Auth.authenticate('caregiver'), Controller.LeaveController.cancelMine);
 
 // Client portal — /api/client/*
 router.get('/client/dashboard', Auth.authenticate('client'), Controller.ClientPortalController.getDashboard);
