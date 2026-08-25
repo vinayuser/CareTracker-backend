@@ -18,6 +18,11 @@ module.exports.create = Joi.object({
   notes: Joi.string().allow('', null),
   address: Joi.string().allow('', null),
   status: Joi.string().valid('Active', 'Paused', 'Ended'),
+}).custom((value, helpers) => {
+  if (value.start_time && value.end_time && value.start_time === value.end_time) {
+    return helpers.message('Start time and end time must be different');
+  }
+  return value;
 });
 
 module.exports.update = Joi.object({

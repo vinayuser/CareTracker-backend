@@ -244,6 +244,9 @@ module.exports = {
       INVALID_LOG_EDIT: 'This visit log cannot be edited right now',
       INVALID_LOG_TIMES: 'Check-out must be after check-in',
       LOG_TIMES_REQUIRED: 'Check-in and check-out times are required',
+      INVALID_TIME_RANGE: 'Start time and end time must be different',
+      TIME_CONFLICT: 'This time overlaps an existing visit for the caregiver or client',
+      SERIES_DELETED: 'Entire schedule series deleted successfully',
     },
     EVV_SETTINGS: {
       UPDATED: 'EVV settings saved',

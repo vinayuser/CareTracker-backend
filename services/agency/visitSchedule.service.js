@@ -275,6 +275,86 @@ const buildVisitWindow = (schedule, dateKey) => {
   };
 };
 
+const rangesOverlap = (startA, endA, startB, endB) => {
+  const a0 = new Date(startA).getTime();
+  const a1 = new Date(endA).getTime();
+  const b0 = new Date(startB).getTime();
+  const b1 = new Date(endB).getTime();
+  if ([a0, a1, b0, b1].some((n) => Number.isNaN(n))) return false;
+  return a0 < b1 && b0 < a1;
+};
+
+/**
+ * Block create/update when caregiver or client already has a non-cancelled visit
+ * overlapping the proposed window on any of the date keys.
+ */
+const assertNoScheduleTimeConflicts = async ({
+  agencyId,
+  caregiverAccountId,
+  clientId,
+  dateKeys,
+  startTime,
+  endTime,
+  timezone,
+  graceMinutes = 15,
+  excludeScheduleIds = [],
+}) => {
+  if (!dateKeys?.length) return;
+  if (!startTime || !endTime) return;
+  if (String(startTime) === String(endTime)) {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_TIME_RANGE);
+  }
+
+  const template = {
+    startTime,
+    endTime,
+    timezone: resolveTimezone(timezone),
+    graceMinutes,
+  };
+  const proposedByDate = new Map();
+  dateKeys.forEach((dateKey) => {
+    const window = buildVisitWindow(template, dateKey);
+    proposedByDate.set(dateKey, {
+      start: window.scheduledStartAt,
+      end: window.scheduledEndAt,
+    });
+  });
+
+  const excludeIds = (excludeScheduleIds || []).filter(Boolean);
+  const filter = {
+    agencyId,
+    scheduledDate: { $in: dateKeys },
+    status: { $ne: 'Cancelled' },
+    $or: [
+      { caregiverAccountId },
+      { clientId },
+    ],
+  };
+  if (excludeIds.length) {
+    filter.scheduleId = { $nin: excludeIds };
+  }
+
+  const existing = await Model.VisitModel.find(filter)
+    .select('scheduledDate scheduledStartAt scheduledEndAt clientName caregiverName caregiverAccountId clientId')
+    .lean();
+
+  for (const visit of existing) {
+    const proposed = proposedByDate.get(visit.scheduledDate);
+    if (!proposed) continue;
+    if (!rangesOverlap(proposed.start, proposed.end, visit.scheduledStartAt, visit.scheduledEndAt)) {
+      continue;
+    }
+
+    const sameCaregiver = String(visit.caregiverAccountId) === String(caregiverAccountId);
+    const detail = sameCaregiver
+      ? `Caregiver already has a visit${visit.clientName ? ` with ${visit.clientName}` : ''}`
+      : `Client already has a visit${visit.caregiverName ? ` with ${visit.caregiverName}` : ''}`;
+    throw new Error(
+      `${detail} on ${visit.scheduledDate} that overlaps ${startTime}–${endTime}. Choose a different time.`,
+    );
+  }
+};
+
 const buildVisitPayload = (schedule, dateKey, visitCode) => {
   const window = buildVisitWindow(schedule, dateKey);
   return {
@@ -570,12 +650,27 @@ const createSchedule = async (req, payload) => {
     throw new Error('No visit days fall in the selected date range');
   }
 
+  if (String(payload.start_time) === String(payload.end_time)) {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_TIME_RANGE);
+  }
+
   const graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
   const timezone = resolveTimezone(payload.timezone);
   const address = payload.address || formatAddress(client);
   const accountId = getAccountId(req);
   const clientName = `${client.firstName || ''} ${client.lastName || ''}`.trim();
   const caregiverName = caregiver.fullName || '';
+
+  await assertNoScheduleTimeConflicts({
+    agencyId,
+    caregiverAccountId: caregiver._id,
+    clientId: client._id,
+    dateKeys,
+    startTime: payload.start_time,
+    endTime: payload.end_time,
+    timezone,
+    graceMinutes,
+  });
 
   // Bulk path: allocate codes once, insertMany schedules + visits (avoids N× sequential DB round-trips / timeouts)
   const holidayMap = await getBlockingHolidayMap(
@@ -734,6 +829,35 @@ const updateSchedule = async (req, id, payload) => {
     schedule.status = payload.status;
   }
 
+  if (String(schedule.startTime) === String(schedule.endTime)) {
+    throw new Error(constants.MESSAGE.VISIT.INVALID_TIME_RANGE);
+  }
+
+  // Re-check caregiver/client overlaps for this schedule's occurrence days
+  {
+    const conflictDates = [];
+    let cur = schedule.effectiveFrom;
+    const to = schedule.effectiveTo || schedule.effectiveFrom;
+    while (cur && to && cur <= to) {
+      if (occursOnDateKey(schedule, cur)) conflictDates.push(cur);
+      cur = addDaysToDateKey(cur, 1);
+      if (conflictDates.length > 400) break;
+    }
+    if (conflictDates.length) {
+      await assertNoScheduleTimeConflicts({
+        agencyId,
+        caregiverAccountId: schedule.caregiverAccountId,
+        clientId: schedule.clientId,
+        dateKeys: conflictDates,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        timezone: schedule.timezone,
+        graceMinutes: schedule.graceMinutes || 15,
+        excludeScheduleIds: [schedule._id],
+      });
+    }
+  }
+
   await schedule.save();
 
   let refreshed = 0;
@@ -804,8 +928,12 @@ const removeSchedule = async (req, id) => {
 };
 
 /** Delete a single calendar day visit (and its one-day schedule when applicable). */
-const removeVisit = async (req, id) => {
+const removeVisit = async (req, id, options = {}) => {
   const agencyId = getAgencyId(req);
+  const scope = String(options.scope || req.query?.scope || 'day').toLowerCase() === 'series'
+    ? 'series'
+    : 'day';
+
   const visit = await Model.VisitModel.findOne({ _id: id, agencyId });
   if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
 
@@ -817,6 +945,10 @@ const removeVisit = async (req, id) => {
     ? await Model.VisitScheduleModel.findOne({ _id: visit.scheduleId, agencyId })
     : null;
 
+  if (scope === 'series' && schedule) {
+    return removeVisitSeries(req, visit, schedule);
+  }
+
   const isSingleDaySchedule = Boolean(
     schedule
     && schedule.effectiveFrom
@@ -826,13 +958,15 @@ const removeVisit = async (req, id) => {
   if (isSingleDaySchedule) {
     await Model.VisitModel.deleteMany({
       scheduleId: schedule._id,
-      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled'] },
+      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled', 'Leave'] },
     });
     await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
     return {
       id: String(id),
       schedule_id: String(schedule._id),
       deleted_schedule: true,
+      scope: 'day',
+      deleted_count: 1,
     };
   }
 
@@ -843,6 +977,74 @@ const removeVisit = async (req, id) => {
     id: String(id),
     schedule_id: schedule ? String(schedule._id) : null,
     deleted_schedule: false,
+    scope: 'day',
+    deleted_count: 1,
+  };
+};
+
+/**
+ * Delete the full "row" of matching one-day schedules (same client, caregiver, care plan, times).
+ * Skips days that are InProgress / Completed.
+ */
+const removeVisitSeries = async (req, visit, schedule) => {
+  const agencyId = getAgencyId(req);
+  const fingerprint = {
+    agencyId,
+    caregiverAccountId: schedule.caregiverAccountId,
+    clientId: schedule.clientId,
+    carePlanId: schedule.carePlanId,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    timezone: schedule.timezone || resolveTimezone(''),
+  };
+
+  const siblingSchedules = await Model.VisitScheduleModel.find(fingerprint).select('_id').lean();
+  const scheduleIds = siblingSchedules.map((s) => s._id);
+
+  // Always include the current schedule even if fingerprint mismatch on older rows
+  if (!scheduleIds.some((sid) => String(sid) === String(schedule._id))) {
+    scheduleIds.push(schedule._id);
+  }
+
+  const protectedVisits = await Model.VisitModel.find({
+    agencyId,
+    scheduleId: { $in: scheduleIds },
+    status: { $in: ['InProgress', 'Completed'] },
+  }).select('scheduleId').lean();
+  const protectedScheduleIds = new Set(protectedVisits.map((v) => String(v.scheduleId)));
+
+  const deletableScheduleIds = scheduleIds.filter((sid) => !protectedScheduleIds.has(String(sid)));
+
+  let deletedVisits = 0;
+  if (deletableScheduleIds.length) {
+    const visitResult = await Model.VisitModel.deleteMany({
+      agencyId,
+      scheduleId: { $in: deletableScheduleIds },
+      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled', 'Leave', 'Exception'] },
+    });
+    deletedVisits = visitResult.deletedCount || 0;
+    await Model.VisitScheduleModel.deleteMany({
+      _id: { $in: deletableScheduleIds },
+      agencyId,
+    });
+  }
+
+  // Cancel remaining open visits on protected schedules that still match the series times
+  // (leave InProgress/Completed alone; cancel future Scheduled siblings on same protected schedule if any)
+  // — single-day model means protected schedule = that day only, so nothing else to cancel.
+
+  if (!deletedVisits && protectedScheduleIds.size) {
+    throw new Error('Cannot delete series — visits are already in progress or completed. Delete open days individually.');
+  }
+
+  return {
+    id: String(visit._id),
+    schedule_id: String(schedule._id),
+    deleted_schedule: true,
+    scope: 'series',
+    deleted_count: deletedVisits,
+    deleted_schedules: deletableScheduleIds.length,
+    skipped_protected: protectedScheduleIds.size,
   };
 };
 

@@ -68,8 +68,13 @@ module.exports.remove = async (req, res, next) => {
 
 module.exports.removeVisit = async (req, res, next) => {
   try {
-    const data = await VisitScheduleService.removeVisit(req, req.params.id);
-    return res.success(constants.MESSAGE.VISIT.DELETED, data);
+    const data = await VisitScheduleService.removeVisit(req, req.params.id, {
+      scope: req.query.scope || 'day',
+    });
+    const message = data?.scope === 'series'
+      ? (constants.MESSAGE.VISIT.SERIES_DELETED || 'Schedule series deleted successfully')
+      : constants.MESSAGE.VISIT.DELETED;
+    return res.success(message, data);
   } catch (error) {
     next(error);
   }
