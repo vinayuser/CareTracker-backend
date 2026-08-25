@@ -123,6 +123,18 @@ const generateVisitCode = async (agencyId) => {
   return `VST-${String(next).padStart(5, '0')}`;
 };
 
+const peekNextCodeNumber = async (ModelCtor, agencyId, field, fallback = 10001) => {
+  const latest = await ModelCtor.findOne({ agencyId })
+    .sort({ [field]: -1 })
+    .select(field)
+    .lean();
+  const match = String(latest?.[field] || '').match(/(\d+)\s*$/);
+  return match ? Number(match[1]) + 1 : fallback;
+};
+
+const formatCode = (prefix, num) => `${prefix}-${String(num).padStart(5, '0')}`;
+
+
 const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
 
 const friendlyDuplicateError = (err) => {
@@ -558,25 +570,118 @@ const createSchedule = async (req, payload) => {
     throw new Error('No visit days fall in the selected date range');
   }
 
-  const schedules = [];
-  let generatedVisits = 0;
-  for (const dateKey of dateKeys) {
-    const { schedule, generated } = await createOneSchedule(req, {
-      agencyId,
-      carePlan,
-      client,
-      caregiver,
-      payload,
-      effectiveFrom: dateKey,
-      effectiveTo: dateKey,
-      recurrenceType: 'Daily',
-      daysOfWeek: [],
-      dayOfMonth: null,
-    });
-    schedules.push(formatSchedule(schedule));
-    generatedVisits += generated.created;
+  const graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
+  const timezone = resolveTimezone(payload.timezone);
+  const address = payload.address || formatAddress(client);
+  const accountId = getAccountId(req);
+  const clientName = `${client.firstName || ''} ${client.lastName || ''}`.trim();
+  const caregiverName = caregiver.fullName || '';
+
+  // Bulk path: allocate codes once, insertMany schedules + visits (avoids N× sequential DB round-trips / timeouts)
+  const holidayMap = await getBlockingHolidayMap(
+    agencyId,
+    dateKeys[0],
+    dateKeys[dateKeys.length - 1],
+  );
+
+  let scheduleNum = await peekNextCodeNumber(Model.VisitScheduleModel, agencyId, 'scheduleCode');
+  let visitNum = await peekNextCodeNumber(Model.VisitModel, agencyId, 'visitCode');
+
+  const scheduleDocs = dateKeys.map((dateKey) => ({
+    agencyId,
+    scheduleCode: formatCode('SCH', scheduleNum++),
+    carePlanId: carePlan._id,
+    clientId: client._id,
+    caregiverAccountId: caregiver._id,
+    serviceArea: payload.service_area || '',
+    careNeedAreaKey: payload.care_need_area_key || '',
+    clientName,
+    caregiverName,
+    planCode: carePlan.planCode || '',
+    recurrenceType: 'Daily',
+    daysOfWeek: [],
+    dayOfMonth: null,
+    startTime: payload.start_time,
+    endTime: payload.end_time,
+    graceMinutes,
+    timezone,
+    effectiveFrom: dateKey,
+    effectiveTo: dateKey,
+    status: payload.status || 'Active',
+    notes: payload.notes || '',
+    address,
+    addressLat: client.homeLat ?? null,
+    addressLng: client.homeLng ?? null,
+    createdByAccountId: accountId,
+  }));
+
+  let createdSchedules;
+  try {
+    createdSchedules = await Model.VisitScheduleModel.insertMany(scheduleDocs, { ordered: true });
+  } catch (err) {
+    const friendly = friendlyDuplicateError(err);
+    if (friendly) throw new Error(friendly);
+    // Race on scheduleCode — fall back to sequential create (slower but safe)
+    if (isDuplicateKeyError(err)) {
+      const schedules = [];
+      let generatedVisits = 0;
+      for (const dateKey of dateKeys) {
+        const { schedule, generated } = await createOneSchedule(req, {
+          agencyId,
+          carePlan,
+          client,
+          caregiver,
+          payload,
+          effectiveFrom: dateKey,
+          effectiveTo: dateKey,
+          recurrenceType: 'Daily',
+          daysOfWeek: [],
+          dayOfMonth: null,
+        });
+        schedules.push(formatSchedule(schedule));
+        generatedVisits += generated.created;
+      }
+      return {
+        schedule: schedules[0] || null,
+        schedules,
+        created_count: schedules.length,
+        generated_visits: generatedVisits,
+      };
+    }
+    throw err;
   }
 
+  const visitDocs = createdSchedules.map((schedule, index) => {
+    const dateKey = dateKeys[index];
+    const visitCode = formatCode('VST', visitNum++);
+    return applyLeaveToPayload(
+      buildVisitPayload(schedule, dateKey, visitCode),
+      holidayMap,
+      dateKey,
+    );
+  });
+
+  let generatedVisits = 0;
+  try {
+    const visits = await Model.VisitModel.insertMany(visitDocs, { ordered: false });
+    generatedVisits = visits.length;
+  } catch (err) {
+    // ordered:false still throws BulkWriteError but inserts non-dup docs
+    if (err?.insertedDocs?.length) {
+      generatedVisits = err.insertedDocs.length;
+    } else if (err?.result?.result?.nInserted != null) {
+      generatedVisits = err.result.result.nInserted;
+    } else if (isDuplicateKeyError(err)) {
+      // Partial success — count how many visits exist for these schedules
+      generatedVisits = await Model.VisitModel.countDocuments({
+        scheduleId: { $in: createdSchedules.map((s) => s._id) },
+      });
+    } else {
+      throw err;
+    }
+  }
+
+  const schedules = createdSchedules.map((s) => formatSchedule(s));
   return {
     schedule: schedules[0] || null,
     schedules,
@@ -584,6 +689,7 @@ const createSchedule = async (req, payload) => {
     generated_visits: generatedVisits,
   };
 };
+
 
 const updateSchedule = async (req, id, payload) => {
   const agencyId = getAgencyId(req);

@@ -251,6 +251,33 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
         coordinatorSignature: '', coordinatorDate: '',
         rnSignature: '', rnDate: '',
       },
+      packetVersion: 1,
+      forms: {
+        '110': {
+          firstName: clientFirst,
+          lastName: clientLast,
+          clientName: clientFull,
+          dob: dateOfBirth,
+          sex: recipient.gender || '',
+          date: extras.assessmentDate || home.visitDate || new Date().toISOString().slice(0, 10),
+          address,
+          phone: basic.alternateNumber || '',
+          cellPhone: basic.phone || lead.phone || '',
+          email: basic.email || lead.email || '',
+          primaryCarePhysician: recipient.doctorClinic || '',
+          diagnoses: [
+            ...(Array.isArray(recipient.medicalConditions) ? recipient.medicalConditions : [conditions].filter(Boolean)),
+            ...Array(10).fill(''),
+          ].slice(0, 10),
+          allergicReactions: recipient.allergies && recipient.allergies !== 'No Known Allergies' ? 'YES' : '',
+          allergies: recipient.allergies && recipient.allergies !== 'No Known Allergies'
+            ? [{ allergy: recipient.allergies, reaction: '' }, { allergy: '', reaction: '' }, { allergy: '', reaction: '' }]
+            : [{ allergy: '', reaction: '' }, { allergy: '', reaction: '' }, { allergy: '', reaction: '' }],
+          pertinentInfoDetails: notesParts.join('\n\n'),
+          requestedServices: Array.isArray(care.primaryNeeds) ? care.primaryNeeds : [],
+          startOfCareDate: basic.preferredStartDate || '',
+        },
+      },
       leadMeta: {
         leadId: String(lead._id || lead.id || ''),
         leadCode: lead.leadCode || '',
