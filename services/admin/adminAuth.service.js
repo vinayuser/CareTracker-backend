@@ -3,7 +3,15 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const Auth = require('../../common/authenticate');
-const { sanitizeModuleAccess, DEFAULT_ADMIN_MODULES, isSuperAdminRole } = require('../../common/adminModules');
+const {
+  sanitizeModuleAccess: sanitizeAdminModuleAccess,
+  DEFAULT_ADMIN_MODULES,
+  isSuperAdminRole,
+} = require('../../common/adminModules');
+const {
+  sanitizeModuleAccess: sanitizeHrModuleAccess,
+  DEFAULT_HR_MODULES,
+} = require('../../common/agencyModules');
 const { sendPasswordResetEmail } = require('../common/mail.service');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -18,7 +26,9 @@ const formatAdminUser = (admin) => ({
   status: admin.status || 'Active',
   moduleAccess: isSuperAdminRole(admin.role)
     ? []
-    : (admin.moduleAccess?.length ? sanitizeModuleAccess(admin.moduleAccess) : [...DEFAULT_ADMIN_MODULES]),
+    : (admin.moduleAccess?.length
+      ? sanitizeAdminModuleAccess(admin.moduleAccess)
+      : [...DEFAULT_ADMIN_MODULES]),
 });
 
 const splitName = (fullName = '') => {
@@ -50,9 +60,9 @@ const formatAgencyUser = async (account) => {
   if (role === 'HR') {
     const hrStaff = await Model.HrStaffModel.findOne({ accountId: account._id });
     const moduleAccess = hrStaff?.moduleAccess?.length
-      ? sanitizeModuleAccess(hrStaff.moduleAccess)
+      ? sanitizeHrModuleAccess(hrStaff.moduleAccess)
       : account.moduleAccess?.length
-        ? sanitizeModuleAccess(account.moduleAccess)
+        ? sanitizeHrModuleAccess(account.moduleAccess)
         : [...DEFAULT_HR_MODULES];
     user.moduleAccess = moduleAccess;
     if (hrStaff) {
