@@ -107,7 +107,7 @@ const generateJobContent = async (req, payload) => {
     + '(3) benefits — compensation culture perks as readable text. Output JSON only.';
 
   const groqJson = await groqChatCompletion(apiKey, {
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: userPrompt },
