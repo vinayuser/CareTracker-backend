@@ -5,6 +5,7 @@ const clientConstants = require('../../common/clientConstants');
 const insuranceConstants = require('../../common/insuranceIntakeConstants');
 const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
 const { resolveProfilePicPath } = require('../../common/profilePicUpload');
+const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 const { sendClientWelcomeEmail } = require('../common/mail.service');
 
 const CLIENT_PAYLOAD_FIELDS = [
@@ -177,6 +178,9 @@ const applyProfilePic = (doc, payload) => {
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const data = pickPayload(payload);
+  if (data.email) {
+    await assertEmailGloballyAvailable(data.email);
+  }
   const profilePicPath = resolveProfilePicPath(payload?.profilePic, 'clients');
   let lastError;
 
@@ -205,6 +209,9 @@ const update = async (req, id, payload) => {
   if (!doc) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
 
   const data = pickPayload(payload);
+  if (data.email) {
+    await assertEmailGloballyAvailable(data.email, { clientId: doc._id });
+  }
   CLIENT_PAYLOAD_FIELDS.forEach((field) => {
     if (data[field] !== undefined) doc[field] = data[field];
   });
@@ -316,16 +323,12 @@ const setPassword = async (req, id, password) => {
   }
 
   if (!account) {
-    const conflict = await Model.AgencyAccountModel.findOne({
-      $or: [{ email }, { userId: email }],
+    await assertEmailGloballyAvailable(email, { clientId: client._id });
+  } else {
+    await assertEmailGloballyAvailable(email, {
+      clientId: client._id,
+      accountId: account._id,
     });
-    if (conflict) {
-      if (conflict.role === 'CLIENT' && String(conflict.clientId) === String(client._id)) {
-        account = conflict;
-      } else {
-        throw new Error(constants.MESSAGE.CLIENT.ACCOUNT_CONFLICT);
-      }
-    }
   }
 
   if (!account) {

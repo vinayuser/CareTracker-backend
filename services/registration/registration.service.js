@@ -8,6 +8,10 @@ const {
   sendAgencyPaymentInvoiceEmail,
 } = require('../common/mail.service');
 const { getAdminEmails, agencyPortalUrl } = require('../common/notifyHelpers');
+const {
+  assertEmailGloballyAvailable,
+  assertLoginIdentifiersAvailable,
+} = require('../../common/emailAvailability');
 
 const detectCardBrand = (digits) => {
   if (/^4/.test(digits)) return 'Visa';
@@ -33,18 +37,15 @@ const sanitizePaymentMethod = (payload = {}) => {
 };
 
 const checkUserIdAvailability = async (userId) => {
-  const existing = await Model.AgencyAccountModel.findOne({
-    userId: userId.toLowerCase(),
-  });
-  if (existing) throw new Error(constants.MESSAGE.USER.USER_ID_TAKEN);
+  await assertLoginIdentifiersAvailable({ userId, email: userId });
   return { available: true };
 };
 
 const createAccount = async (payload) => {
-  const existing = await Model.AgencyAccountModel.findOne({
-    userId: payload.email.toLowerCase(),
+  await assertLoginIdentifiersAvailable({
+    email: payload.email,
+    userId: payload.email,
   });
-  if (existing) throw new Error(constants.MESSAGE.USER.USER_ID_TAKEN);
 
   const account = new Model.AgencyAccountModel({
     userId: payload.email.toLowerCase(),
@@ -143,6 +144,11 @@ const submitRegistration = async (req, payload) => {
   });
 
   if (payload.userId && payload.password) {
+    await assertLoginIdentifiersAvailable({
+      email: payload.email || payload.userId,
+      userId: payload.userId,
+    });
+
     let account = await Model.AgencyAccountModel.findOne({ userId: payload.userId.toLowerCase() });
     if (!account) {
       account = new Model.AgencyAccountModel({

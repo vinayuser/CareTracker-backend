@@ -2,6 +2,10 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { sanitizeModuleAccess, DEFAULT_HR_MODULES } = require('../../common/agencyModules');
+const {
+  assertEmailGloballyAvailable,
+  assertLoginIdentifiersAvailable,
+} = require('../../common/emailAvailability');
 const { sendHrWelcomeEmail, sendHrCustomEmail } = require('../common/mail.service');
 
 const formatHrStaff = (doc) => {
@@ -75,14 +79,14 @@ const create = async (req, payload) => {
   assertAgencyOwner(req);
   const agencyId = getAgencyId(req);
 
-  const existingAccount = await Model.AgencyAccountModel.findOne({
-    $or: [{ userId: payload.userId.toLowerCase() }, { email: payload.email.toLowerCase() }],
+  await assertLoginIdentifiersAvailable({
+    email: payload.email,
+    userId: payload.userId,
   });
-  if (existingAccount) throw new Error(constants.MESSAGE.USER.USER_ID_TAKEN);
 
   const existingEmployee = await Model.HrStaffModel.findOne({
     agencyId,
-    $or: [{ employeeId: payload.employeeId }, { email: payload.email.toLowerCase() }],
+    employeeId: payload.employeeId,
   });
   if (existingEmployee) throw new Error(constants.MESSAGE.HR.ALREADY_EXISTS);
 
@@ -159,6 +163,26 @@ const update = async (req, id, payload) => {
   const agencyId = getAgencyId(req);
   const member = await Model.HrStaffModel.findOne({ _id: id, agencyId });
   if (!member) throw new Error(constants.MESSAGE.HR.NOT_FOUND);
+
+  if (payload.email !== undefined || payload.userId !== undefined) {
+    await assertLoginIdentifiersAvailable({
+      email: payload.email !== undefined ? payload.email : member.email,
+      userId: payload.userId !== undefined ? payload.userId : member.userId,
+      exclude: {
+        accountId: member.accountId,
+        hrStaffId: member._id,
+      },
+    });
+  }
+
+  if (payload.employeeId !== undefined && payload.employeeId !== member.employeeId) {
+    const employeeClash = await Model.HrStaffModel.findOne({
+      agencyId,
+      employeeId: payload.employeeId,
+      _id: { $ne: member._id },
+    });
+    if (employeeClash) throw new Error(constants.MESSAGE.HR.ALREADY_EXISTS);
+  }
 
   const updatableFields = [
     'firstName',

@@ -12,6 +12,10 @@ const {
   sanitizeModuleAccess: sanitizeHrModuleAccess,
   DEFAULT_HR_MODULES,
 } = require('../../common/agencyModules');
+const {
+  assertEmailGloballyAvailable,
+  assertLoginIdentifiersAvailable,
+} = require('../../common/emailAvailability');
 const { sendPasswordResetEmail } = require('../common/mail.service');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -161,29 +165,10 @@ const getMe = async (req) => {
 };
 
 const assertEmailAvailable = async ({ email, excludeAdminId, excludeAccountId }) => {
-  if (!email) return;
-  const normalized = String(email).trim().toLowerCase();
-  const adminClash = await Model.AdminModel.findOne({
-    email: normalized,
-    ...(excludeAdminId ? { _id: { $ne: excludeAdminId } } : {}),
-  }).select('_id');
-  if (adminClash) throw new Error(constants.MESSAGE.USER.EMAIL_ALREADY_IN_USE);
-
-  const accountClash = await Model.AgencyAccountModel.findOne({
-    email: normalized,
-    ...(excludeAccountId ? { _id: { $ne: excludeAccountId } } : {}),
-  }).select('_id');
-  if (accountClash) throw new Error(constants.MESSAGE.USER.EMAIL_ALREADY_IN_USE);
-};
-
-const assertUserIdAvailable = async (userId, excludeAccountId) => {
-  if (!userId) return;
-  const normalized = String(userId).trim().toLowerCase();
-  const clash = await Model.AgencyAccountModel.findOne({
-    userId: normalized,
-    _id: { $ne: excludeAccountId },
-  }).select('_id');
-  if (clash) throw new Error(constants.MESSAGE.USER.USER_ID_TAKEN);
+  await assertEmailGloballyAvailable(email, {
+    adminId: excludeAdminId,
+    accountId: excludeAccountId,
+  });
 };
 
 const updateProfile = async (req, payload = {}) => {
@@ -210,8 +195,14 @@ const updateProfile = async (req, payload = {}) => {
     throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
   }
 
+  if (payload.email !== undefined || payload.userId !== undefined) {
+    await assertLoginIdentifiersAvailable({
+      email: payload.email !== undefined ? payload.email : account.email,
+      userId: payload.userId !== undefined ? payload.userId : account.userId,
+      exclude: { accountId: account._id },
+    });
+  }
   if (payload.email !== undefined) {
-    await assertEmailAvailable({ email: payload.email, excludeAccountId: account._id });
     account.email = String(payload.email).trim().toLowerCase();
   }
   if (payload.name !== undefined) {
@@ -227,7 +218,6 @@ const updateProfile = async (req, payload = {}) => {
     account.employeeId = String(payload.employeeId || '').trim();
   }
   if (payload.userId !== undefined) {
-    await assertUserIdAvailable(payload.userId, account._id);
     account.userId = String(payload.userId).trim().toLowerCase();
   }
 

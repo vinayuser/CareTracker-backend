@@ -3,6 +3,10 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
 const { resolveProfilePicPath } = require('../../common/profilePicUpload');
+const {
+  assertEmailGloballyAvailable,
+  assertLoginIdentifiersAvailable,
+} = require('../../common/emailAvailability');
 const { sendCandidateCustomEmail } = require('../common/mail.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
@@ -188,13 +192,11 @@ const update = async (req, id, payload) => {
   if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
 
   if (payload.email || payload.userId) {
-    const email = (payload.email || account.email || '').toLowerCase();
-    const userId = (payload.userId || account.userId || '').toLowerCase();
-    const conflict = await Model.AgencyAccountModel.findOne({
-      _id: { $ne: account._id },
-      $or: [{ email }, { userId }],
+    await assertLoginIdentifiersAvailable({
+      email: payload.email !== undefined ? payload.email : account.email,
+      userId: payload.userId !== undefined ? payload.userId : account.userId,
+      exclude: { accountId: account._id },
     });
-    if (conflict) throw new Error(constants.MESSAGE.CAREGIVER.USER_ID_TAKEN);
   }
 
   if (payload.fullName !== undefined) account.fullName = payload.fullName.trim();

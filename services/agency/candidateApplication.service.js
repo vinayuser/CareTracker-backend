@@ -12,6 +12,7 @@ const {
   sendCandidateRoundCompletedEmail,
   sendCandidateCustomEmail,
 } = require('../common/mail.service');
+const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 
 const formatApplicationPopulated = (app) => {
   if (!app) return null;
@@ -153,6 +154,8 @@ const applyForJob = async (req, payload) => {
 
   let candidate = existingCandidate;
   if (!candidate) {
+    await assertEmailGloballyAvailable(payload.email);
+
     const profilePicPath = getUploadedFilePath(req, 'profile_pic');
     const resumePath = getUploadedFilePath(req, 'resume');
     const dateOfBirth = payload.date_of_birth ? new Date(payload.date_of_birth) : undefined;
@@ -360,6 +363,8 @@ const transferHiredApplicationToCaregiver = async (req, app, job) => {
 
   let tempPassword = null;
   if (!caregiverAccount) {
+    await assertEmailGloballyAvailable(candidate.email, { candidateId: candidate._id });
+
     tempPassword = `Care@${functions.generateRandomStringAndNumbers(6)}`;
     caregiverAccount = new Model.AgencyAccountModel({
       userId: candidate.email.toLowerCase(),

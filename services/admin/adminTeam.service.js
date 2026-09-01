@@ -6,6 +6,7 @@ const {
   DEFAULT_ADMIN_MODULES,
   isSuperAdminRole,
 } = require('../../common/adminModules');
+const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 
 const toIsoDate = (value) => {
   if (!value) return null;
@@ -95,8 +96,7 @@ const getAll = async (req, query = {}) => {
 const create = async (req, payload) => {
   const actor = assertSuperAdmin(req);
   const email = String(payload.email || '').trim().toLowerCase();
-  const existing = await Model.AdminModel.findOne({ email }).select('_id');
-  if (existing) throw new Error(constants.MESSAGE.USER.EMAIL_ALREADY_IN_USE);
+  await assertEmailGloballyAvailable(email);
 
   const role = isSuperAdminRole(payload.role) ? 'SUPER_ADMIN' : 'ADMIN';
   const admin = new Model.AdminModel({
@@ -120,8 +120,7 @@ const update = async (req, id, payload) => {
 
   if (payload.email !== undefined) {
     const email = String(payload.email).trim().toLowerCase();
-    const clash = await Model.AdminModel.findOne({ email, _id: { $ne: admin._id } }).select('_id');
-    if (clash) throw new Error(constants.MESSAGE.USER.EMAIL_ALREADY_IN_USE);
+    await assertEmailGloballyAvailable(email, { adminId: admin._id });
     admin.email = email;
   }
   if (payload.name !== undefined) admin.name = String(payload.name).trim();

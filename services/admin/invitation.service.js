@@ -1,6 +1,7 @@
 const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
+const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 const { sendAgencyInvitationEmail } = require('../common/mail.service');
 
 const formatInvitation = (invitation, req) => {
@@ -52,6 +53,8 @@ const deliverInvitationEmail = async (invitation, req) => {
 const send = async (req, payload) => {
   const plan = await Model.SubscriptionPlanModel.findById(payload.subscriptionPlanId);
   if (!plan) throw new Error('Subscription Plan Not Found');
+
+  await assertEmailGloballyAvailable(payload.email);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);

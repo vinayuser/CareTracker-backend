@@ -20,7 +20,7 @@ module.exports = {
     },
     USER: {
       NOT_FOUND: 'User Not Found',
-      EMAIL_ALREADY_IN_USE: 'Email address is already in use',
+      EMAIL_ALREADY_IN_USE: 'This email is already registered with another account',
       USER_ID_TAKEN: 'User ID is already taken',
     },
     INVITATION: {
