@@ -15,6 +15,7 @@ module.exports = {
   InterviewFeedbackModel: require('./InterviewFeedbackModel'),
   ClientModel: require('./ClientModel'),
   LeadModel: require('./LeadModel'),
+  AgencyCodeCounterModel: require('./AgencyCodeCounterModel'),
   ClientAssessmentModel: require('./ClientAssessmentModel'),
   CarePlanModel: require('./CarePlanModel'),
   CarePlanHistoryModel: require('./CarePlanHistoryModel'),

@@ -14,6 +14,7 @@ const {
   uniqueEmails,
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
+const { allocateNextCode, isDuplicateKeyError } = require('../../common/agencyCodeSequence');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -127,15 +128,21 @@ const notifyQuoteGenerated = async (req, assessment, plan) => {
   }
 };
 
-const generateAssessmentCode = async (agencyId) => {
-  const count = await Model.ClientAssessmentModel.countDocuments({ agencyId });
-  return `ASM-${String(10001 + count).padStart(5, '0')}`;
-};
+const generateAssessmentCode = async (agencyId) => allocateNextCode({
+  agencyId,
+  key: 'assessment',
+  prefix: 'ASM',
+  existingModel: Model.ClientAssessmentModel,
+  codeField: 'assessmentCode',
+});
 
-const generatePlanCode = async (agencyId) => {
-  const count = await Model.CarePlanModel.countDocuments({ agencyId });
-  return `CP-${String(10001 + count).padStart(5, '0')}`;
-};
+const generatePlanCode = async (agencyId) => allocateNextCode({
+  agencyId,
+  key: 'care_plan',
+  prefix: 'CP',
+  existingModel: Model.CarePlanModel,
+  codeField: 'planCode',
+});
 
 const mapRequestedServices = (requested = []) => {
   if (!requested.length) return DEFAULT_SERVICES.map((s) => ({ ...s }));
@@ -297,20 +304,31 @@ const getById = async (req, id) => {
 const create = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const summary = syncSummaryFields(payload.formData);
-  const doc = await Model.ClientAssessmentModel.create({
-    agencyId,
-    assessmentCode: await generateAssessmentCode(agencyId),
-    assessorName: payload.assessorName || '',
-    assessorTitle: payload.assessorTitle || 'Care Assessment Specialist',
-    assessorPhoto: payload.assessorPhoto || '',
-    assessmentDate: payload.assessmentDate || new Date().toISOString().split('T')[0],
-    assessmentTypes: payload.assessmentTypes || [],
-    formData: payload.formData,
-    status: payload.status || 'Enquiry',
-    clientId: payload.clientId || null,
-    ...summary,
-    createdByAccountId: getAccountId(req),
-  });
+  let doc;
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      doc = await Model.ClientAssessmentModel.create({
+        agencyId,
+        assessmentCode: await generateAssessmentCode(agencyId),
+        assessorName: payload.assessorName || '',
+        assessorTitle: payload.assessorTitle || 'Care Assessment Specialist',
+        assessorPhoto: payload.assessorPhoto || '',
+        assessmentDate: payload.assessmentDate || new Date().toISOString().split('T')[0],
+        assessmentTypes: payload.assessmentTypes || [],
+        formData: payload.formData,
+        status: payload.status || 'Enquiry',
+        clientId: payload.clientId || null,
+        ...summary,
+        createdByAccountId: getAccountId(req),
+      });
+      break;
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      lastError = err;
+    }
+  }
+  if (!doc) throw lastError || new Error('Failed to create assessment');
 
   try {
     const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);

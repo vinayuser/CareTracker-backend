@@ -2,6 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const leadConstants = require('../../common/leadConstants');
+const { allocateNextCode, isDuplicateKeyError } = require('../../common/agencyCodeSequence');
 const { create: createClient } = require('./client.service');
 const { create: createAssessment } = require('./clientAssessment.service');
 
@@ -290,16 +291,13 @@ const mapLeadToAssessmentPayload = (lead, extras = {}) => {
   };
 };
 
-const generateLeadCode = async (agencyId) => {
-  const latest = await Model.LeadModel.findOne({ agencyId })
-    .sort({ leadCode: -1 })
-    .select('leadCode')
-    .lean();
-  let next = 10001;
-  const match = String(latest?.leadCode || '').match(/(\d+)\s*$/);
-  if (match) next = Number(match[1]) + 1;
-  return `LD-${String(next).padStart(5, '0')}`;
-};
+const generateLeadCode = async (agencyId) => allocateNextCode({
+  agencyId,
+  key: 'lead',
+  prefix: 'LD',
+  existingModel: Model.LeadModel,
+  codeField: 'leadCode',
+});
 
 const getOptions = () => leadConstants.getOptions();
 
@@ -355,24 +353,33 @@ const create = async (req, payload) => {
   const formData = normalizeFormDataNames(payload.formData || {});
   const summary = syncSummaryFields(formData);
 
-  const doc = await Model.LeadModel.create({
-    agencyId,
-    leadCode: await generateLeadCode(agencyId),
-    stage: payload.stage || 'New Lead',
-    priority: payload.priority || formData.statusInfo?.priority || 'Medium',
-    nextAction: payload.nextAction ?? formData.statusInfo?.nextAction ?? '',
-    notes: payload.notes ?? formData.internalNotes ?? '',
-    ...summary,
-    formData,
-    assignedToAccountId: payload.assignedToAccountId || account?._id || null,
-    assignedToName: payload.assignedToName
-      || account?.fullName
-      || account?.name
-      || '',
-    createdByAccountId: getAccountId(req),
-  });
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const doc = await Model.LeadModel.create({
+        agencyId,
+        leadCode: await generateLeadCode(agencyId),
+        stage: payload.stage || 'New Lead',
+        priority: payload.priority || formData.statusInfo?.priority || 'Medium',
+        nextAction: payload.nextAction ?? formData.statusInfo?.nextAction ?? '',
+        notes: payload.notes ?? formData.internalNotes ?? '',
+        ...summary,
+        formData,
+        assignedToAccountId: payload.assignedToAccountId || account?._id || null,
+        assignedToName: payload.assignedToName
+          || account?.fullName
+          || account?.name
+          || '',
+        createdByAccountId: getAccountId(req),
+      });
+      return formatLead(doc);
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      lastError = err;
+    }
+  }
 
-  return formatLead(doc);
+  throw lastError || new Error('Failed to create lead');
 };
 
 const update = async (req, id, payload) => {
