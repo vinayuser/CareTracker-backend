@@ -1,6 +1,7 @@
 /** Keep in sync with admin/src/constants/agencyModules.js */
 const OWNER_ONLY_MODULES = [
   'AGENCY_HR_STAFF',
+  'AGENCY_SETTINGS',
 ];
 
 const MODULE_GROUPS = [

@@ -12,6 +12,7 @@ const {
   sanitizeModuleAccess: sanitizeHrModuleAccess,
   DEFAULT_HR_MODULES,
 } = require('../../common/agencyModules');
+const { buildUploadUrl } = require('../../common/candidateHelpers');
 const {
   assertEmailGloballyAvailable,
   assertLoginIdentifiersAvailable,
@@ -51,6 +52,14 @@ const formatAgencyUser = async (account) => {
     email: account.email,
     role,
     agencyName: account.agencyId?.name || '',
+    agencyLogo: account.agencyId?.logoPath ? buildUploadUrl(account.agencyId.logoPath) : '',
+    agencyEmail: account.agencyId?.email || '',
+    agencyPhone: account.agencyId?.phone || '',
+    agencyFax: account.agencyId?.fax || '',
+    agencyWebsite: account.agencyId?.website || '',
+    agencyAddress: account.agencyId?.address || '',
+    agencyCity: account.agencyId?.city || '',
+    agencyState: account.agencyId?.state || '',
     agencyId: account.agencyId?._id ? String(account.agencyId._id) : '',
     userId: account.userId || '',
     phone: account.phone || '',

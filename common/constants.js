@@ -251,6 +251,9 @@ module.exports = {
     EVV_SETTINGS: {
       UPDATED: 'EVV settings saved',
     },
+    AGENCY_SETTINGS: {
+      UPDATED: 'Agency settings saved',
+    },
     INVOICE: {
       CREATED: 'Invoice draft created',
       SENT: 'Invoice sent',

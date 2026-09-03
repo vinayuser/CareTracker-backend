@@ -246,6 +246,8 @@ router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Con
 router.get('/agency/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getAgencyDashboard);
 router.get('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.get);
 router.put('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.update);
+router.get('/agency/settings', Auth.authenticate('agency_owner'), Controller.AgencySettingsController.get);
+router.put('/agency/settings', Auth.authenticate('agency_owner'), Controller.AgencySettingsController.update);
 
 router.get('/agency/invoices', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.getAll);
 router.get('/agency/invoices/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.getById);

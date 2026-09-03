@@ -35,6 +35,7 @@ const AgencySchema = new mongoose.Schema(
     yearEstablished: { type: String, default: '' },
     website: { type: String, default: '' },
     address: { type: String, default: '' },
+    fax: { type: String, default: '' },
     serviceAreas: [{ type: String }],
     description: { type: String, default: '' },
     status: {
@@ -50,6 +51,7 @@ const AgencySchema = new mongoose.Schema(
     paymentMethods: { type: [PaymentMethodSchema], default: [] },
     registeredAt: { type: String, default: () => new Date().toISOString().split('T')[0] },
     iconColor: { type: String, default: 'bg-blue-100 text-blue-600' },
+    logoPath: { type: String, default: '' },
   },
   {
     timestamps: true,

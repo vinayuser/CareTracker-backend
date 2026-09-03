@@ -41,4 +41,32 @@ const resolveProfilePicPath = (profilePic, folder) => {
   return `${folder}/profile_pics/${filename}`;
 };
 
-module.exports = { resolveProfilePicPath };
+/**
+ * Resolve an agency logo from the client payload (same rules as profile pics).
+ * Saves under uploads/agencies/logos/
+ *
+ * @param {string|undefined|null} logo
+ * @returns {string|null}
+ */
+const resolveAgencyLogoPath = (logo) => {
+  if (logo === undefined) return null;
+  if (logo === null || logo === '') return '';
+
+  const value = String(logo);
+  if (!value.startsWith('data:image/')) return null;
+
+  const match = value.match(/^data:image\/([\w+.-]+);base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!match) throw new Error('Invalid agency logo data');
+
+  const rawType = match[1].toLowerCase().replace('+xml', '');
+  const ext = EXT_MAP[rawType];
+  if (!ext) throw new Error('Agency logo must be JPG, PNG, GIF, or WebP');
+
+  const dir = path.join(__dirname, '../uploads/agencies/logos');
+  fs.mkdirSync(dir, { recursive: true });
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  fs.writeFileSync(path.join(dir, filename), Buffer.from(match[2].replace(/\s/g, ''), 'base64'));
+  return `agencies/logos/${filename}`;
+};
+
+module.exports = { resolveProfilePicPath, resolveAgencyLogoPath };
