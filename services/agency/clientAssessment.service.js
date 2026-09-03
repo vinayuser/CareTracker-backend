@@ -14,6 +14,7 @@ const {
   uniqueEmails,
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
+const { allocateNextCode, isDuplicateKeyError } = require('../../common/agencyCodeSequence');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -127,6 +128,7 @@ const notifyQuoteGenerated = async (req, assessment, plan) => {
   }
 };
 
+<<<<<<< HEAD
 const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
 
 const generateAssessmentCode = async (agencyId) => {
@@ -151,6 +153,23 @@ const generatePlanCode = async (agencyId) => {
   if (match) next = Number(match[1]) + 1;
   return `CP-${String(next).padStart(5, '0')}`;
 };
+=======
+const generateAssessmentCode = async (agencyId) => allocateNextCode({
+  agencyId,
+  key: 'assessment',
+  prefix: 'ASM',
+  existingModel: Model.ClientAssessmentModel,
+  codeField: 'assessmentCode',
+});
+
+const generatePlanCode = async (agencyId) => allocateNextCode({
+  agencyId,
+  key: 'care_plan',
+  prefix: 'CP',
+  existingModel: Model.CarePlanModel,
+  codeField: 'planCode',
+});
+>>>>>>> a4b38e7 (assesment duplicate issue fixed)
 
 const mapRequestedServices = (requested = []) => {
   if (!requested.length) return DEFAULT_SERVICES.map((s) => ({ ...s }));
