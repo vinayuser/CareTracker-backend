@@ -128,32 +128,6 @@ const notifyQuoteGenerated = async (req, assessment, plan) => {
   }
 };
 
-<<<<<<< HEAD
-const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
-
-const generateAssessmentCode = async (agencyId) => {
-  // Max existing code + 1 (countDocuments reuses codes after deletes / failed creates)
-  const latest = await Model.ClientAssessmentModel.findOne({ agencyId })
-    .sort({ assessmentCode: -1 })
-    .select('assessmentCode')
-    .lean();
-  let next = 10001;
-  const match = String(latest?.assessmentCode || '').match(/(\d+)\s*$/);
-  if (match) next = Number(match[1]) + 1;
-  return `ASM-${String(next).padStart(5, '0')}`;
-};
-
-const generatePlanCode = async (agencyId) => {
-  const latest = await Model.CarePlanModel.findOne({ agencyId })
-    .sort({ planCode: -1 })
-    .select('planCode')
-    .lean();
-  let next = 10001;
-  const match = String(latest?.planCode || '').match(/(\d+)\s*$/);
-  if (match) next = Number(match[1]) + 1;
-  return `CP-${String(next).padStart(5, '0')}`;
-};
-=======
 const generateAssessmentCode = async (agencyId) => allocateNextCode({
   agencyId,
   key: 'assessment',
@@ -169,7 +143,6 @@ const generatePlanCode = async (agencyId) => allocateNextCode({
   existingModel: Model.CarePlanModel,
   codeField: 'planCode',
 });
->>>>>>> a4b38e7 (assesment duplicate issue fixed)
 
 const mapRequestedServices = (requested = []) => {
   if (!requested.length) return DEFAULT_SERVICES.map((s) => ({ ...s }));
