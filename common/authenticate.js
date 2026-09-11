@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Model = require('../models/index');
+const { isAgencyLoginBlocked } = require('./agencyVisibility');
 
 const tokenBlacklist = new Set();
 
@@ -60,7 +61,12 @@ module.exports.authenticate = (...args) => async (req, res, next) => {
         roles.includes(PORTAL_ROLES.client))
     ) {
       const account = await Model.AgencyAccountModel.findOne({ _id: decoded._id }).populate('agencyId');
-      if (account && account.status !== 'Inactive' && jtiMatches(decoded, account)) {
+      if (
+        account &&
+        account.status !== 'Inactive' &&
+        jtiMatches(decoded, account) &&
+        !isAgencyLoginBlocked(account.agencyId)
+      ) {
         const accountRole = String(account.role || 'AGENCY_OWNER').toLowerCase();
         if (roles.includes(accountRole)) {
           role = accountRole;

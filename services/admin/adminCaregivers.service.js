@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { notArchivedFilter } = require('../../common/agencyVisibility');
 const { CARE_OVERVIEW_CATEGORIES } = require('../../common/carePlanConstants');
 
 const toOid = (value) => {
@@ -69,9 +70,18 @@ const serviceLabel = (key) =>
 
 const clientFullName = (client) => `${client.firstName || ''} ${client.lastName || ''}`.trim();
 
-const agencyFilter = (agencyId) => {
+const agencyFilter = async (agencyId) => {
   const oid = toOid(agencyId);
-  return oid ? { agencyId: oid } : {};
+  if (oid) {
+    const visible = await Model.AgencyModel.findOne({
+      _id: oid,
+      ...notArchivedFilter(),
+    }).select('_id');
+    if (!visible) return { agencyId: { $in: [] } };
+    return { agencyId: oid };
+  }
+  const visibleIds = await Model.AgencyModel.find(notArchivedFilter()).distinct('_id');
+  return { agencyId: { $in: visibleIds } };
 };
 
 const caregiverCode = (account) => {
@@ -112,14 +122,14 @@ const formatVisit = (visit) => {
   };
 };
 
-const caregiverBase = (agencyId) => ({
+const caregiverBase = async (agencyId) => ({
   role: 'CAREGIVER',
-  ...agencyFilter(agencyId),
+  ...(await agencyFilter(agencyId)),
 });
 
 const getStats = async (agencyId) => {
-  const filter = caregiverBase(agencyId);
-  const visitFilter = agencyFilter(agencyId);
+  const filter = await caregiverBase(agencyId);
+  const visitFilter = await agencyFilter(agencyId);
   const today = todayKey();
 
   const [total, active, upcomingSchedules, invoiceIds] = await Promise.all([
@@ -153,7 +163,7 @@ const getCaregivers = async (query = {}) => {
   const limit = Math.min(50, Math.max(1, Number(query.limit) || 5));
   const search = String(query.search || '').trim();
   const status = String(query.status || 'All');
-  const filter = caregiverBase(query.agencyId);
+  const filter = await caregiverBase(query.agencyId);
 
   if (status && status !== 'All') filter.status = status;
   if (search) {

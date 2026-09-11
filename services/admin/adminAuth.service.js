@@ -13,6 +13,7 @@ const {
   DEFAULT_HR_MODULES,
 } = require('../../common/agencyModules');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { isAgencyLoginBlocked } = require('../../common/agencyVisibility');
 const {
   assertEmailGloballyAvailable,
   assertLoginIdentifiersAvailable,
@@ -141,6 +142,9 @@ const login = async (req) => {
 
   if (!account) throw new Error(constants.MESSAGE.AUTH.INVALID_CREDENTIALS);
   if (account.status === 'Inactive') throw new Error('Account is inactive');
+  if (isAgencyLoginBlocked(account.agencyId)) {
+    throw new Error(constants.MESSAGE.AGENCY.LOGIN_BLOCKED);
+  }
 
   try {
     await account.authenticate(req.body.password);
@@ -322,9 +326,14 @@ const forgotPassword = async (req, payload = {}) => {
 
   const account = await Model.AgencyAccountModel.findOne({
     $or: [{ email: loginId }, { userId: loginId }],
-  });
+  }).populate('agencyId');
 
-  if (account && account.status !== 'Inactive' && account.email) {
+  if (
+    account
+    && account.status !== 'Inactive'
+    && account.email
+    && !isAgencyLoginBlocked(account.agencyId)
+  ) {
     account.passwordResetToken = resetToken;
     account.passwordResetExpires = expiresAt;
     await account.save();

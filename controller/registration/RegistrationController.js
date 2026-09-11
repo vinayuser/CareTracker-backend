@@ -3,7 +3,10 @@ const { RegistrationService } = require('../../services');
 
 module.exports.checkUserId = async (req, res, next) => {
   try {
-    const data = await RegistrationService.checkUserIdAvailability(req.query.email);
+    const data = await RegistrationService.checkUserIdAvailability(
+      req.query.email,
+      req.query.invitationToken,
+    );
     return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
     next(error);

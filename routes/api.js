@@ -50,6 +50,9 @@ router.get('/subscription-plans/active', Controller.SubscriptionPlanController.g
 // Super admin — /api/admin/*
 router.get('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.getAll);
 router.get('/admin/agencies/options', Auth.authenticate('super_admin'), Controller.AgencyController.getOptions);
+router.get('/admin/agencies/lifecycle', Auth.authenticate('super_admin'), Controller.AgencyController.getLifecycleList);
+router.post('/admin/agencies/:id/archive', Auth.authenticate('super_admin'), Controller.AgencyController.archive);
+router.post('/admin/agencies/:id/restore', Auth.authenticate('super_admin'), Controller.AgencyController.restore);
 router.get('/admin/agencies/:id/caregivers', Auth.authenticate('super_admin'), Controller.AgencyController.getCaregivers);
 router.get('/admin/agencies/:id/billing', Auth.authenticate('super_admin'), Controller.AgencyController.getBilling);
 router.get('/admin/agencies/:id/documents', Auth.authenticate('super_admin'), Controller.AgencyController.getDocuments);
@@ -101,6 +104,7 @@ router.get('/admin/invitations/stats', Auth.authenticate('super_admin'), Control
 router.get('/admin/invitations', Auth.authenticate('super_admin'), Controller.InvitationController.getAll);
 router.post('/admin/invitations', Auth.authenticate('super_admin'), Controller.InvitationController.send);
 router.post('/admin/invitations/:id/resend', Auth.authenticate('super_admin'), Controller.InvitationController.resend);
+router.delete('/admin/invitations/:id', Auth.authenticate('super_admin'), Controller.InvitationController.remove);
 
 // Agency portal — /api/agency/*
 router.get('/agency/hr-staff/stats', Auth.authenticate('agency_owner', 'hr'), Controller.HrStaffController.getStats);

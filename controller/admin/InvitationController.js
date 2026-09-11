@@ -39,10 +39,22 @@ module.exports.resend = async (req, res, next) => {
   }
 };
 
+module.exports.remove = async (req, res, next) => {
+  try {
+    const data = await InvitationService.remove(req.params.id);
+    return res.success(constants.MESSAGE.INVITATION.DELETED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.validate = async (req, res, next) => {
   try {
     const data = await InvitationService.validateToken(req.query.token);
-    return res.success(constants.MESSAGE.SUCCESS, data);
+    return res.success(constants.MESSAGE.SUCCESS, {
+      invitation: data.invitation,
+      plan: data.plan,
+    });
   } catch (error) {
     next(error);
   }

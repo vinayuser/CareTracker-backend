@@ -7,7 +7,7 @@ const MODULE_GROUPS = [
   { title: 'Overview', keys: ['ADMIN_DASHBOARD'] },
   {
     title: 'Agencies & Access',
-    keys: ['ADMIN_AGENCIES', 'ADMIN_INVITATIONS', 'ADMIN_USERS'],
+    keys: ['ADMIN_AGENCIES', 'ADMIN_AGENCY_LIFECYCLE', 'ADMIN_INVITATIONS', 'ADMIN_USERS'],
   },
   {
     title: 'Care Operations',
@@ -48,6 +48,7 @@ const MODULE_GROUPS = [
 const MODULE_LABELS = {
   ADMIN_DASHBOARD: 'Dashboard',
   ADMIN_AGENCIES: 'Agencies',
+  ADMIN_AGENCY_LIFECYCLE: 'Agency Lifecycle',
   ADMIN_INVITATIONS: 'Invitations',
   ADMIN_USERS: 'Users',
   ADMIN_CLIENTS: 'Clients',

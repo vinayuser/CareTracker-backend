@@ -1,5 +1,4 @@
 const Model = require('../../models/index');
-const constants = require('../../common/constants');
 const InvitationService = require('../admin/invitation.service');
 const AgencyService = require('../admin/agency.service');
 const {
@@ -9,7 +8,6 @@ const {
 } = require('../common/mail.service');
 const { getAdminEmails, agencyPortalUrl } = require('../common/notifyHelpers');
 const {
-  assertEmailGloballyAvailable,
   assertLoginIdentifiersAvailable,
 } = require('../../common/emailAvailability');
 
@@ -36,15 +34,28 @@ const sanitizePaymentMethod = (payload = {}) => {
   };
 };
 
-const checkUserIdAvailability = async (userId) => {
-  await assertLoginIdentifiersAvailable({ userId, email: userId });
+const resolvePendingInvitationExclude = async (invitationToken) => {
+  if (!invitationToken) return {};
+  const invitation = await Model.InvitationModel.findOne({
+    token: invitationToken,
+    status: 'Pending',
+  }).select('_id');
+  return invitation ? { invitationId: invitation._id } : {};
+};
+
+const checkUserIdAvailability = async (userId, invitationToken) => {
+  const exclude = await resolvePendingInvitationExclude(invitationToken);
+  await assertLoginIdentifiersAvailable({ userId, email: userId, exclude });
   return { available: true };
 };
 
 const createAccount = async (payload) => {
+  const exclude = await resolvePendingInvitationExclude(payload.invitationToken);
+
   await assertLoginIdentifiersAvailable({
     email: payload.email,
     userId: payload.email,
+    exclude,
   });
 
   const account = new Model.AgencyAccountModel({
@@ -55,6 +66,11 @@ const createAccount = async (payload) => {
   });
   await account.setPassword(payload.password);
   await account.save();
+
+  if (exclude.invitationId) {
+    account.invitationId = exclude.invitationId;
+    await account.save();
+  }
 
   return { userId: account.userId, fullName: account.fullName };
 };
@@ -117,14 +133,32 @@ const notifyRegistrationComplete = async (req, {
 };
 
 const submitRegistration = async (req, payload) => {
-  let invitation = null;
+  let invitationDoc = null;
   if (payload.invitationToken) {
     const validated = await InvitationService.validateToken(payload.invitationToken);
-    invitation = validated.invitation;
+    invitationDoc = validated.invitationDoc;
   }
 
   const plan = await Model.SubscriptionPlanModel.findById(payload.planId);
   if (!plan) throw new Error('Subscription Plan Not Found');
+
+  const loginEmail = (payload.email || payload.userId || '').toLowerCase();
+  const loginUserId = (payload.userId || payload.email || '').toLowerCase();
+  let existingAccount = null;
+  if (loginUserId) {
+    existingAccount = await Model.AgencyAccountModel.findOne({ userId: loginUserId });
+  }
+
+  if (payload.userId && payload.password) {
+    await assertLoginIdentifiersAvailable({
+      email: loginEmail || loginUserId,
+      userId: loginUserId,
+      exclude: {
+        invitationId: invitationDoc?._id,
+        accountId: existingAccount?._id,
+      },
+    });
+  }
 
   const agency = await Model.AgencyModel.create({
     name: payload.agencyName,
@@ -143,17 +177,17 @@ const submitRegistration = async (req, payload) => {
     usage: { clients: 0, caregivers: 0, users: 1, branches: 1 },
   });
 
-  if (payload.userId && payload.password) {
-    await assertLoginIdentifiersAvailable({
-      email: payload.email || payload.userId,
-      userId: payload.userId,
-    });
+  // One-time invite: invalidate immediately after agency is created
+  if (payload.invitationToken) {
+    await InvitationService.markAccepted(payload.invitationToken);
+  }
 
-    let account = await Model.AgencyAccountModel.findOne({ userId: payload.userId.toLowerCase() });
+  if (payload.userId && payload.password) {
+    let account = existingAccount;
     if (!account) {
       account = new Model.AgencyAccountModel({
-        userId: payload.userId.toLowerCase(),
-        email: payload.email?.toLowerCase() || payload.userId.toLowerCase(),
+        userId: loginUserId,
+        email: loginEmail || loginUserId,
         fullName: payload.fullName || '',
         role: 'AGENCY_OWNER',
         status: 'Active',
@@ -162,10 +196,9 @@ const submitRegistration = async (req, payload) => {
       await account.setPassword(payload.password);
     }
     account.agencyId = agency._id;
-    if (payload.invitationToken) {
-      const invDoc = await Model.InvitationModel.findOne({ token: payload.invitationToken });
-      if (invDoc) account.invitationId = invDoc._id;
-    }
+    account.role = account.role || 'AGENCY_OWNER';
+    account.status = 'Active';
+    if (invitationDoc) account.invitationId = invitationDoc._id;
     await account.save();
   }
 
@@ -173,11 +206,7 @@ const submitRegistration = async (req, payload) => {
   plan.assignedAgencies.push({ id: String(agency._id), name: agency.name });
   await plan.save();
 
-  if (payload.invitationToken) {
-    await InvitationService.markAccepted(payload.invitationToken);
-  }
-
-  const ownerEmail = (payload.email || invitation?.email || '').toLowerCase();
+  const ownerEmail = (payload.email || invitationDoc?.email || '').toLowerCase();
   const paymentMethod = payload.paymentMethod || sanitizePaymentMethod(payload);
   try {
     await AgencyService.recordSubscriptionPayment(agency._id, {

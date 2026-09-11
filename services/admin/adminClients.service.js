@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { notArchivedFilter } = require('../../common/agencyVisibility');
 const insuranceConstants = require('../../common/insuranceIntakeConstants');
 const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
 
@@ -67,9 +68,18 @@ const initials = (name = '') => String(name)
 
 const fullName = (client) => `${client.firstName || ''} ${client.lastName || ''}`.trim();
 
-const agencyFilter = (agencyId) => {
+const agencyFilter = async (agencyId) => {
   const oid = toOid(agencyId);
-  return oid ? { agencyId: oid } : {};
+  if (oid) {
+    const visible = await Model.AgencyModel.findOne({
+      _id: oid,
+      ...notArchivedFilter(),
+    }).select('_id');
+    if (!visible) return { agencyId: { $in: [] } };
+    return { agencyId: oid };
+  }
+  const visibleIds = await Model.AgencyModel.find(notArchivedFilter()).distinct('_id');
+  return { agencyId: { $in: visibleIds } };
 };
 
 const mapInvoiceStatus = (invoice) => {
@@ -101,7 +111,7 @@ const formatVisit = (visit) => {
 };
 
 const getStats = async (agencyId) => {
-  const filter = agencyFilter(agencyId);
+  const filter = await agencyFilter(agencyId);
   const now = new Date();
   const today = todayKey(now);
 
@@ -128,7 +138,7 @@ const getClients = async (query = {}) => {
   const limit = Math.min(50, Math.max(1, Number(query.limit) || 5));
   const search = String(query.search || '').trim();
   const status = String(query.status || 'All');
-  const filter = agencyFilter(query.agencyId);
+  const filter = await agencyFilter(query.agencyId);
 
   if (status && status !== 'All') filter.status = status;
   if (search) {

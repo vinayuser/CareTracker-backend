@@ -29,6 +29,8 @@ module.exports = {
       EXPIRED: 'Invitation Has Expired',
       ALREADY_USED: 'Invitation Has Already Been Used',
       RESENT: 'Invitation Resent Successfully',
+      DELETED: 'Invitation Deleted Successfully',
+      CANNOT_DELETE_ACCEPTED: 'Accepted invitations cannot be deleted',
     },
     REGISTRATION: {
       COMPLETED: 'Registration Completed Successfully',
@@ -253,6 +255,15 @@ module.exports = {
     },
     AGENCY_SETTINGS: {
       UPDATED: 'Agency settings saved',
+    },
+    AGENCY: {
+      NOT_FOUND: 'Agency Not Found',
+      DELETED: 'Agency and all related records deleted successfully',
+      ARCHIVED: 'Agency archived successfully',
+      RESTORED: 'Agency restored successfully',
+      ALREADY_ARCHIVED: 'Agency is already archived',
+      NOT_ARCHIVED: 'Agency is not archived',
+      LOGIN_BLOCKED: 'This agency has been archived and can no longer access the platform',
     },
     INVOICE: {
       CREATED: 'Invoice draft created',

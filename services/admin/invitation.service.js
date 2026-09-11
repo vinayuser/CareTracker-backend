@@ -81,6 +81,9 @@ const send = async (req, payload) => {
 const resend = async (req, id) => {
   const invitation = await Model.InvitationModel.findById(id);
   if (!invitation) throw new Error(constants.MESSAGE.INVITATION.NOT_FOUND);
+  if (invitation.status === 'Accepted') {
+    throw new Error(constants.MESSAGE.INVITATION.ALREADY_USED);
+  }
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
@@ -96,28 +99,48 @@ const resend = async (req, id) => {
   return formatted;
 };
 
+const remove = async (id) => {
+  const invitation = await Model.InvitationModel.findById(id);
+  if (!invitation) throw new Error(constants.MESSAGE.INVITATION.NOT_FOUND);
+  if (invitation.status === 'Accepted') {
+    throw new Error(constants.MESSAGE.INVITATION.CANNOT_DELETE_ACCEPTED);
+  }
+  await invitation.deleteOne();
+  return { id: String(id) };
+};
+
 const validateToken = async (token) => {
   const invitation = await Model.InvitationModel.findOne({ token });
   if (!invitation) throw new Error(constants.MESSAGE.INVITATION.NOT_FOUND);
   if (invitation.status === 'Accepted') throw new Error(constants.MESSAGE.INVITATION.ALREADY_USED);
-  if (new Date(invitation.expiresAt) < new Date()) {
-    invitation.status = 'Expired';
-    await invitation.save();
+  if (invitation.status === 'Expired' || new Date(invitation.expiresAt) < new Date()) {
+    if (invitation.status !== 'Expired') {
+      invitation.status = 'Expired';
+      await invitation.save();
+    }
     throw new Error(constants.MESSAGE.INVITATION.EXPIRED);
   }
 
   const plan = await Model.SubscriptionPlanModel.findById(invitation.subscriptionPlanId);
   return {
     invitation: formatInvitation(invitation),
+    invitationDoc: invitation,
     plan: functions.toClientDoc(plan),
   };
 };
 
+/** Atomically mark a pending invite Accepted (one-time use). */
 const markAccepted = async (token) => {
-  const invitation = await Model.InvitationModel.findOne({ token });
-  if (!invitation) return null;
-  invitation.status = 'Accepted';
-  await invitation.save();
+  const invitation = await Model.InvitationModel.findOneAndUpdate(
+    { token, status: 'Pending' },
+    { $set: { status: 'Accepted' } },
+    { new: true },
+  );
+  if (!invitation) {
+    const existing = await Model.InvitationModel.findOne({ token });
+    if (!existing) return null;
+    return formatInvitation(existing);
+  }
   return formatInvitation(invitation);
 };
 
@@ -126,6 +149,7 @@ module.exports = {
   getAll,
   send,
   resend,
+  remove,
   validateToken,
   markAccepted,
   formatInvitation,

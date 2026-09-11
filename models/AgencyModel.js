@@ -40,9 +40,12 @@ const AgencySchema = new mongoose.Schema(
     description: { type: String, default: '' },
     status: {
       type: String,
-      enum: ['Active', 'Pending', 'Inactive', 'Suspended'],
+      enum: ['Active', 'Pending', 'Inactive', 'Suspended', 'Archived'],
       default: 'Pending',
     },
+    /** Previous status before archive — used when restoring. */
+    statusBeforeArchive: { type: String, default: '' },
+    archivedAt: { type: Date, default: null },
     subscriptionPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubscriptionPlan' },
     usage: { type: UsageSchema, default: () => ({}) },
     autoRenewal: { type: Boolean, default: true },

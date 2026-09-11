@@ -1,6 +1,9 @@
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
+const constants = require('../../common/constants');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { ARCHIVED_STATUS, notArchivedFilter } = require('../../common/agencyVisibility');
+const { purgeAgencyRelatedData } = require('./agencyPurge.service');
 const fs = require('fs/promises');
 const path = require('path');
 
@@ -247,13 +250,13 @@ const getCaregivers = async (agencyId, query = {}) => {
 };
 
 const getAll = async () => {
-  const agencies = await Model.AgencyModel.find().sort({ createdAt: -1 });
+  const agencies = await Model.AgencyModel.find(notArchivedFilter()).sort({ createdAt: -1 });
   return functions.toClientList(agencies).map(formatAgency);
 };
 
-/** Lightweight dropdown list — id + name (+ status for badges). */
+/** Lightweight dropdown list — id + name (+ status for badges). Excludes archived. */
 const getOptions = async () => {
-  const agencies = await Model.AgencyModel.find()
+  const agencies = await Model.AgencyModel.find(notArchivedFilter())
     .select('name status')
     .sort({ name: 1 })
     .lean();
@@ -262,6 +265,88 @@ const getOptions = async () => {
     name: agency.name || '',
     status: agency.status || 'Active',
   }));
+};
+
+/** Full list for lifecycle management (includes archived). */
+const getLifecycleList = async (query = {}) => {
+  const status = String(query.status || 'All');
+  const search = String(query.search || '').trim();
+  const filter = {};
+
+  if (status === 'Archived') filter.status = ARCHIVED_STATUS;
+  else if (status === 'Active') filter.status = { $ne: ARCHIVED_STATUS };
+  else if (status && status !== 'All') filter.status = status;
+
+  if (search) {
+    const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [
+      { name: regex },
+      { email: regex },
+      { ownerName: regex },
+      { city: regex },
+      { state: regex },
+    ];
+  }
+
+  const agencies = await Model.AgencyModel.find(filter).sort({ updatedAt: -1 });
+  const [activeCount, archivedCount, total] = await Promise.all([
+    Model.AgencyModel.countDocuments(notArchivedFilter()),
+    Model.AgencyModel.countDocuments({ status: ARCHIVED_STATUS }),
+    Model.AgencyModel.countDocuments(),
+  ]);
+
+  return {
+    items: functions.toClientList(agencies).map(formatAgency),
+    stats: { total, active: activeCount, archived: archivedCount },
+  };
+};
+
+const archive = async (id) => {
+  const agency = await Model.AgencyModel.findById(id);
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+  if (agency.status === ARCHIVED_STATUS) {
+    throw new Error(constants.MESSAGE.AGENCY.ALREADY_ARCHIVED);
+  }
+
+  agency.statusBeforeArchive = agency.status || 'Active';
+  agency.status = ARCHIVED_STATUS;
+  agency.archivedAt = new Date();
+  await agency.save();
+
+  // Invalidate existing sessions for every account under this agency
+  await Model.AgencyAccountModel.updateMany(
+    { agencyId: agency._id },
+    { $set: { jti: `archived_${Date.now()}` } },
+  );
+
+  return formatAgency(agency);
+};
+
+const restore = async (id) => {
+  const agency = await Model.AgencyModel.findById(id);
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+  if (agency.status !== ARCHIVED_STATUS) {
+    throw new Error(constants.MESSAGE.AGENCY.NOT_ARCHIVED);
+  }
+
+  const previous = agency.statusBeforeArchive && agency.statusBeforeArchive !== ARCHIVED_STATUS
+    ? agency.statusBeforeArchive
+    : 'Active';
+  agency.status = previous;
+  agency.statusBeforeArchive = '';
+  agency.archivedAt = null;
+  await agency.save();
+
+  return formatAgency(agency);
+};
+
+const remove = async (id) => {
+  const agency = await Model.AgencyModel.findById(id).select('_id');
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+
+  const purged = await purgeAgencyRelatedData(agency._id);
+  await Model.AgencyModel.findByIdAndDelete(agency._id);
+  return { deleted: true, purged };
 };
 
 const getById = async (id) => {
@@ -573,9 +658,17 @@ const create = async (payload) => {
 };
 
 const update = async (id, payload) => {
-  const previous = await Model.AgencyModel.findById(id).select('subscriptionPlanId');
+  const previous = await Model.AgencyModel.findById(id).select('subscriptionPlanId status');
+  if (!previous) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+  if (previous.status === ARCHIVED_STATUS) {
+    throw new Error('Restore the agency before editing it');
+  }
+  if (payload?.status === ARCHIVED_STATUS) {
+    throw new Error('Use Agency Lifecycle to archive an agency');
+  }
+
   const agency = await Model.AgencyModel.findByIdAndUpdate(id, payload, { new: true });
-  if (!agency) throw new Error('Agency Not Found');
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
 
   const nextPlanId = agency.subscriptionPlanId ? String(agency.subscriptionPlanId) : '';
   const prevPlanId = previous?.subscriptionPlanId ? String(previous.subscriptionPlanId) : '';
@@ -593,21 +686,18 @@ const update = async (id, payload) => {
   return getById(id);
 };
 
-const remove = async (id) => {
-  const agency = await Model.AgencyModel.findByIdAndDelete(id);
-  if (!agency) throw new Error('Agency Not Found');
-  return true;
-};
-
 module.exports = {
   getAll,
   getOptions,
+  getLifecycleList,
   getById,
   getCaregivers,
   getBilling,
   recordSubscriptionPayment,
   create,
   update,
+  archive,
+  restore,
   remove,
   formatAgency,
 };

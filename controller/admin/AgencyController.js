@@ -119,6 +119,33 @@ module.exports.removeNote = async (req, res, next) => {
   }
 };
 
+module.exports.getLifecycleList = async (req, res, next) => {
+  try {
+    const data = await AgencyService.getLifecycleList(req.query);
+    return res.success(constants.MESSAGE.LIST, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.archive = async (req, res, next) => {
+  try {
+    const data = await AgencyService.archive(req.params.id);
+    return res.success(constants.MESSAGE.AGENCY.ARCHIVED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.restore = async (req, res, next) => {
+  try {
+    const data = await AgencyService.restore(req.params.id);
+    return res.success(constants.MESSAGE.AGENCY.RESTORED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.create = async (req, res, next) => {
   try {
     const data = await AgencyService.create(req.body);
@@ -139,8 +166,8 @@ module.exports.update = async (req, res, next) => {
 
 module.exports.remove = async (req, res, next) => {
   try {
-    await AgencyService.remove(req.params.id);
-    return res.success(constants.MESSAGE.RECORD_DELETED, {});
+    const data = await AgencyService.remove(req.params.id);
+    return res.success(constants.MESSAGE.AGENCY.DELETED, data);
   } catch (error) {
     next(error);
   }
