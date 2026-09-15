@@ -53,6 +53,8 @@ router.get('/admin/agencies/options', Auth.authenticate('super_admin'), Controll
 router.get('/admin/agencies/lifecycle', Auth.authenticate('super_admin'), Controller.AgencyController.getLifecycleList);
 router.post('/admin/agencies/:id/archive', Auth.authenticate('super_admin'), Controller.AgencyController.archive);
 router.post('/admin/agencies/:id/restore', Auth.authenticate('super_admin'), Controller.AgencyController.restore);
+router.patch('/admin/agencies/:id/password', Auth.authenticate('super_admin'), Controller.AgencyController.setPassword);
+router.post('/admin/agencies/:id/reset-password', Auth.authenticate('super_admin'), Controller.AgencyController.resetPassword);
 router.get('/admin/agencies/:id/caregivers', Auth.authenticate('super_admin'), Controller.AgencyController.getCaregivers);
 router.get('/admin/agencies/:id/billing', Auth.authenticate('super_admin'), Controller.AgencyController.getBilling);
 router.get('/admin/agencies/:id/documents', Auth.authenticate('super_admin'), Controller.AgencyController.getDocuments);

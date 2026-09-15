@@ -758,6 +758,63 @@ const sendAgencyInvitationEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+/** Credentials email when admin sets or resets an agency owner password */
+const sendAgencyOwnerCredentialsEmail = async ({
+  to,
+  ownerName,
+  agencyName,
+  email,
+  password,
+  loginUrl,
+  reset = false,
+}) => {
+  const portalUrl = loginUrl || `${getFrontendUrl()}/login`;
+  const agency = agencyName || 'your agency';
+  const subject = reset
+    ? `CareTraker — new password for ${agency}`
+    : `CareTraker — password updated for ${agency}`;
+
+  const intro = reset
+    ? 'A new temporary password has been generated for your CareTraker agency login.'
+    : 'Your CareTraker agency login password has been updated by the platform admin.';
+
+  const text = [
+    `Hello ${ownerName || 'there'},`,
+    '',
+    intro,
+    '',
+    `Agency: ${agency}`,
+    `Login email: ${email}`,
+    `Password: ${password}`,
+    '',
+    'Please sign in and change your password after logging in.',
+    '',
+    `Sign in: ${portalUrl}`,
+    '',
+    'Thank you,',
+    'CareTraker',
+  ].join('\n');
+
+  const html = wrapEmail(reset ? 'New agency password' : 'Agency password updated', `
+    <p style="margin:0 0 12px;">Hello ${escapeHtml(ownerName || 'there')},</p>
+    <p style="margin:0 0 12px;">${escapeHtml(intro)}</p>
+    <table cellpadding="0" cellspacing="0" style="margin:16px 0;width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      <tr><td style="padding:14px 16px;font-size:14px;">
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Agency</span><br /><strong>${escapeHtml(agency)}</strong></p>
+        <p style="margin:0 0 8px;"><span style="color:#64748b;">Login email</span><br /><strong>${escapeHtml(email)}</strong></p>
+        <p style="margin:0;"><span style="color:#64748b;">Password</span><br /><strong style="font-family:Consolas,Monaco,monospace;letter-spacing:0.02em;">${escapeHtml(password)}</strong></p>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 12px;font-size:13px;color:#64748b;">Please change your password after signing in.</p>
+    ${ctaButton(portalUrl, 'Sign in to CareTraker')}
+    <p style="margin:20px 0 0;color:#64748b;font-size:14px;">
+      Thank you,<br /><strong style="color:#0f172a;">CareTraker</strong>
+    </p>
+  `);
+
+  return sendMail({ to, subject, html, text });
+};
+
 /** Welcome email to agency owner after successful registration / payment */
 const sendAgencyRegistrationWelcomeEmail = async ({
   to,
@@ -1152,6 +1209,7 @@ module.exports = {
   sendEvvEnrollmentSubmitConfirmationEmail,
   sendAgencyInvitationEmail,
   sendAgencyRegistrationWelcomeEmail,
+  sendAgencyOwnerCredentialsEmail,
   sendAdminAgencyOnboardedEmail,
   sendAgencyPaymentInvoiceEmail,
   sendAssessmentCreatedEmail,

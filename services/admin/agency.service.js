@@ -4,8 +4,80 @@ const constants = require('../../common/constants');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
 const { ARCHIVED_STATUS, notArchivedFilter } = require('../../common/agencyVisibility');
 const { purgeAgencyRelatedData } = require('./agencyPurge.service');
+const { sendAgencyOwnerCredentialsEmail } = require('../common/mail.service');
+const { assertLoginIdentifiersAvailable } = require('../../common/emailAvailability');
 const fs = require('fs/promises');
 const path = require('path');
+
+/** Find existing owner login for an agency (by agencyId, then by agency email). */
+const findOwnerAccount = async (agency) => {
+  let account = await Model.AgencyAccountModel.findOne({
+    agencyId: agency._id,
+    role: 'AGENCY_OWNER',
+  });
+  if (account) return account;
+
+  const email = String(agency.email || '').trim().toLowerCase();
+  if (!email) return null;
+
+  account = await Model.AgencyAccountModel.findOne({
+    role: 'AGENCY_OWNER',
+    $or: [{ email }, { userId: email }],
+  });
+  if (!account) return null;
+
+  const linkedId = account.agencyId ? String(account.agencyId) : '';
+  if (linkedId && linkedId !== String(agency._id)) {
+    return null;
+  }
+
+  account.agencyId = agency._id;
+  if (!account.status || account.status === 'Pending') {
+    account.status = 'Active';
+  }
+  return account;
+};
+
+/**
+ * Update password on the owner account, creating one from agency email when missing.
+ */
+const ensureOwnerPassword = async (agency, password) => {
+  let account = await findOwnerAccount(agency);
+
+  if (account) {
+    await applyOwnerPassword(account, password);
+    return account;
+  }
+
+  const email = String(agency.email || '').trim().toLowerCase();
+  if (!email) throw new Error(constants.MESSAGE.AGENCY.OWNER_EMAIL_MISSING);
+
+  await assertLoginIdentifiersAvailable({ email, userId: email });
+
+  account = new Model.AgencyAccountModel({
+    userId: email,
+    email,
+    fullName: agency.ownerName || agency.name || email,
+    role: 'AGENCY_OWNER',
+    status: 'Active',
+    agencyId: agency._id,
+    password: 'placeholder',
+    jti: functions.generateRandomStringAndNumbers(20),
+  });
+  await account.setPassword(password);
+  account.passwordResetToken = '';
+  account.passwordResetExpires = null;
+  await account.save();
+  return account;
+};
+
+const applyOwnerPassword = async (account, password) => {
+  await account.setPassword(password);
+  account.jti = functions.generateRandomStringAndNumbers(20);
+  account.passwordResetToken = '';
+  account.passwordResetExpires = null;
+  await account.save();
+};
 
 const formatPlan = (plan) => {
   if (!plan) return null;
@@ -338,6 +410,48 @@ const restore = async (id) => {
   await agency.save();
 
   return formatAgency(agency);
+};
+
+/**
+ * Set a specific password for the agency owner login account.
+ * Creates the owner account from the agency email when one does not exist yet.
+ */
+const setPassword = async (id, password) => {
+  const agency = await Model.AgencyModel.findById(id);
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+
+  await ensureOwnerPassword(agency, password);
+  return formatAgency(agency);
+};
+
+/**
+ * Generate a random password for the agency owner, save it, and email credentials.
+ * Creates the owner account from the agency email when one does not exist yet.
+ */
+const resetPassword = async (id) => {
+  const agency = await Model.AgencyModel.findById(id);
+  if (!agency) throw new Error(constants.MESSAGE.AGENCY.NOT_FOUND);
+
+  const email = String(agency.email || '').trim().toLowerCase();
+  if (!email) throw new Error(constants.MESSAGE.AGENCY.OWNER_EMAIL_MISSING);
+
+  const password = `Agency@${functions.generateRandomStringAndNumbers(8)}`;
+  const account = await ensureOwnerPassword(agency, password);
+  const loginEmail = String(account.email || account.userId || email).trim().toLowerCase();
+
+  await sendAgencyOwnerCredentialsEmail({
+    to: loginEmail,
+    ownerName: account.fullName || agency.ownerName || '',
+    agencyName: agency.name || '',
+    email: account.userId || loginEmail,
+    password,
+    reset: true,
+  });
+
+  return {
+    agency: formatAgency(agency),
+    emailedTo: loginEmail,
+  };
 };
 
 const remove = async (id) => {
@@ -698,6 +812,8 @@ module.exports = {
   update,
   archive,
   restore,
+  setPassword,
+  resetPassword,
   remove,
   formatAgency,
 };

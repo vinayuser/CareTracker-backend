@@ -264,6 +264,10 @@ module.exports = {
       ALREADY_ARCHIVED: 'Agency is already archived',
       NOT_ARCHIVED: 'Agency is not archived',
       LOGIN_BLOCKED: 'This agency has been archived and can no longer access the platform',
+      OWNER_NOT_FOUND: 'Agency owner login account not found',
+      OWNER_EMAIL_MISSING: 'Agency owner does not have an email address',
+      PASSWORD_UPDATED: 'Agency password updated successfully',
+      PASSWORD_RESET_SENT: 'A new password was generated and emailed to the agency owner',
     },
     INVOICE: {
       CREATED: 'Invoice draft created',

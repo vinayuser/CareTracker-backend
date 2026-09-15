@@ -1,6 +1,7 @@
 module.exports = {
   Auth: require('./admin/auth'),
   Invitation: require('./admin/invitation'),
+  Agency: require('./admin/agency'),
   HrStaff: require('./agency/hrStaff'),
   HiringPipeline: require('./agency/hiringPipeline'),
   JobPost: require('./agency/jobPost'),

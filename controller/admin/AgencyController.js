@@ -1,4 +1,5 @@
 const constants = require('../../common/constants');
+const Validation = require('../../validation');
 const { AgencyService } = require('../../services');
 const AgencyRecordsService = require('../../services/admin/agencyRecords.service');
 
@@ -141,6 +142,25 @@ module.exports.restore = async (req, res, next) => {
   try {
     const data = await AgencyService.restore(req.params.id);
     return res.success(constants.MESSAGE.AGENCY.RESTORED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.setPassword = async (req, res, next) => {
+  try {
+    await Validation.Agency.setPassword.validateAsync(req.body);
+    const data = await AgencyService.setPassword(req.params.id, req.body.password);
+    return res.success(constants.MESSAGE.AGENCY.PASSWORD_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.resetPassword = async (req, res, next) => {
+  try {
+    const data = await AgencyService.resetPassword(req.params.id);
+    return res.success(constants.MESSAGE.AGENCY.PASSWORD_RESET_SENT, data);
   } catch (error) {
     next(error);
   }
