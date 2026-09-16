@@ -3,6 +3,7 @@ module.exports.AgencyService = require('./admin/agency.service');
 module.exports.AdminUsersService = require('./admin/adminUsers.service');
 module.exports.SubscriptionPlanService = require('./admin/subscriptionPlan.service');
 module.exports.InvitationService = require('./admin/invitation.service');
+module.exports.AdminDashboardService = require('./admin/adminDashboard.service');
 module.exports.RegistrationService = require('./registration/registration.service');
 module.exports.HrStaffService = require('./agency/hrStaff.service');
 module.exports.HiringPipelineService = require('./agency/hiringPipeline.service');

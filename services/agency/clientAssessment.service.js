@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
@@ -17,6 +18,12 @@ const {
 const { allocateNextCode, isDuplicateKeyError } = require('../../common/agencyCodeSequence');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
+
+const toObjectId = (value) => {
+  if (!value) return value;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  return new mongoose.Types.ObjectId(String(value));
+};
 
 const getAgencyId = (req) => {
   const account = getAgencyAccount(req);
@@ -59,6 +66,25 @@ const syncSummaryFields = (formData = {}) => {
   };
 };
 
+const PACKET_FORM_CODES = [
+  '110', '324', '325', '350', '400', '410', '610', '790', '800',
+  '1009', '1081', '1082', '1083', '7000', '7050',
+];
+
+const packetProgressFromFormData = (formData = {}) => {
+  const meta = formData?.formMeta || {};
+  let saved = 0;
+  let started = 0;
+  PACKET_FORM_CODES.forEach((code) => {
+    const status = meta[code]?.status;
+    if (status === 'saved' || status === 'complete') saved += 1;
+    else if (status === 'in_progress') started += 1;
+  });
+  return { total: PACKET_FORM_CODES.length, saved, started };
+};
+
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const formatAssessment = (doc, req = null) => {
   const item = functions.toClientDoc(doc);
   if (!item) return null;
@@ -84,7 +110,55 @@ const formatAssessment = (doc, req = null) => {
     item.client = null;
     item.clientPhoto = '';
   }
+  item.packetProgress = doc.packetProgress || packetProgressFromFormData(doc.formData);
+  item.recommendedWeeklyHours = Number(doc.formData?.carePlanSummary?.recommendedWeeklyHours) || 0;
   return item;
+};
+
+/** List row — no formData / nested client payload. */
+const formatAssessmentListItem = (doc, req = null) => {
+  const item = functions.toClientDoc(doc);
+  if (!item) return null;
+  const plan = doc.carePlanId && typeof doc.carePlanId === 'object' && doc.carePlanId._id
+    ? doc.carePlanId
+    : null;
+  const clientDoc = doc.clientId && typeof doc.clientId === 'object' && (doc.clientId._id || doc.clientId.profilePicPath)
+    ? doc.clientId
+    : null;
+  const photoPath = clientDoc?.profilePicPath || '';
+  delete item.formData;
+  delete item.formMeta;
+  delete item.client;
+  item.agencyId = String(doc.agencyId?._id || doc.agencyId || '');
+  item.carePlanId = plan ? String(plan._id) : (doc.carePlanId ? String(doc.carePlanId) : null);
+  item.clientId = clientDoc
+    ? String(clientDoc._id)
+    : (doc.clientId ? String(doc.clientId) : null);
+  item.hourlyRate = plan?.hourlyRate;
+  item.weeklyHours = plan?.weeklyHours;
+  item.quotedMonthlyPrice = plan?.quotedMonthlyPrice;
+  item.clientPhoto = photoPath ? functions.buildUploadUrl(photoPath, req) : '';
+  const storedProgress = doc.packetProgress && typeof doc.packetProgress === 'object'
+    ? {
+      total: Number(doc.packetProgress.total) || PACKET_FORM_CODES.length,
+      saved: Number(doc.packetProgress.saved) || 0,
+      started: Number(doc.packetProgress.started) || 0,
+    }
+    : null;
+  const computedProgress = packetProgressFromFormData(doc.formData || { formMeta: doc.formMeta });
+  item.packetProgress = (computedProgress.saved || computedProgress.started)
+    ? computedProgress
+    : (storedProgress || computedProgress);
+  item.recommendedWeeklyHours = Number(
+    doc.recommendedWeeklyHours
+    ?? doc.formData?.carePlanSummary?.recommendedWeeklyHours,
+  ) || 0;
+  return item;
+};
+
+const applyPacketProgress = (doc) => {
+  doc.packetProgress = packetProgressFromFormData(doc.formData);
+  return doc;
 };
 
 const resolveClientPhoto = async (agencyId, assessment, req) => {
@@ -258,25 +332,38 @@ const mapAssessmentToCarePlanFormData = (formData = {}) => {
 const getOptions = () => assessmentConstants.getOptions();
 
 const getStats = async (req) => {
-  const agencyId = getAgencyId(req);
-  const list = await Model.ClientAssessmentModel.find({ agencyId });
+  const agencyId = toObjectId(getAgencyId(req));
+  const rows = await Model.ClientAssessmentModel.aggregate([
+    { $match: { agencyId } },
+    { $group: { _id: '$status', n: { $sum: 1 } } },
+  ]);
+  const byStatus = Object.fromEntries(rows.map((row) => [row._id, row.n]));
+  const enquiry = byStatus.Enquiry || 0;
+  const quoted = byStatus.Quoted || 0;
+  const accepted = byStatus.Accepted || 0;
+  const declined = byStatus.Declined || 0;
   return {
-    total: list.length,
-    enquiry: list.filter((a) => a.status === 'Enquiry').length,
-    quoted: list.filter((a) => a.status === 'Quoted').length,
-    accepted: list.filter((a) => a.status === 'Accepted').length,
-    declined: list.filter((a) => a.status === 'Declined').length,
+    total: enquiry + quoted + accepted + declined,
+    enquiry,
+    quoted,
+    accepted,
+    declined,
   };
 };
 
 const getAll = async (req, query = {}) => {
-  const agencyId = getAgencyId(req);
+  const agencyId = toObjectId(getAgencyId(req));
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 10));
   const filter = { agencyId };
   if (query.status && query.status !== 'All') filter.status = query.status;
-  if (query.client_id) filter.clientId = query.client_id;
+  if (query.client_id && mongoose.Types.ObjectId.isValid(String(query.client_id))) {
+    filter.clientId = toObjectId(query.client_id);
+  }
 
-  if (query.search) {
-    const regex = new RegExp(String(query.search).trim(), 'i');
+  const search = String(query.search || '').trim();
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), 'i');
     filter.$or = [
       { clientName: regex },
       { clientPhone: regex },
@@ -286,11 +373,77 @@ const getAll = async (req, query = {}) => {
     ];
   }
 
-  const list = await Model.ClientAssessmentModel.find(filter)
-    .populate({ path: 'carePlanId', select: 'hourlyRate weeklyHours quotedMonthlyPrice' })
-    .populate('clientId')
-    .sort({ createdAt: -1 });
-  return list.map((doc) => formatAssessment(doc, req));
+  const [total, list] = await Promise.all([
+    Model.ClientAssessmentModel.countDocuments(filter),
+    Model.ClientAssessmentModel.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $project: {
+          assessmentCode: 1,
+          status: 1,
+          assessorName: 1,
+          assessorTitle: 1,
+          assessorPhoto: 1,
+          assessmentDate: 1,
+          clientName: 1,
+          clientPhone: 1,
+          clientEmail: 1,
+          carePlanId: 1,
+          clientId: 1,
+          packetProgress: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          agencyId: 1,
+          formMeta: '$formData.formMeta',
+          recommendedWeeklyHours: '$formData.carePlanSummary.recommendedWeeklyHours',
+        },
+      },
+      {
+        $lookup: {
+          from: Model.CarePlanModel.collection.name,
+          let: { planId: '$carePlanId' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$planId'] } } },
+            { $project: { hourlyRate: 1, weeklyHours: 1, quotedMonthlyPrice: 1 } },
+          ],
+          as: '_carePlan',
+        },
+      },
+      {
+        $lookup: {
+          from: Model.ClientModel.collection.name,
+          let: { cid: '$clientId' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$cid'] } } },
+            { $project: { profilePicPath: 1 } },
+          ],
+          as: '_client',
+        },
+      },
+      {
+        $addFields: {
+          carePlanId: { $ifNull: [{ $arrayElemAt: ['$_carePlan', 0] }, '$carePlanId'] },
+          clientId: { $ifNull: [{ $arrayElemAt: ['$_client', 0] }, '$clientId'] },
+        },
+      },
+      { $project: { _carePlan: 0, _client: 0 } },
+    ]),
+  ]);
+
+  return {
+    items: list.map((doc) => formatAssessmentListItem(doc, req)),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      from: total === 0 ? 0 : (page - 1) * limit + 1,
+      to: Math.min(page * limit, total),
+    },
+  };
 };
 
 const getById = async (req, id) => {
@@ -317,6 +470,7 @@ const create = async (req, payload) => {
         assessmentDate: payload.assessmentDate || new Date().toISOString().split('T')[0],
         assessmentTypes: payload.assessmentTypes || [],
         formData: payload.formData,
+        packetProgress: packetProgressFromFormData(payload.formData),
         status: payload.status || 'Enquiry',
         clientId: payload.clientId || null,
         ...summary,
@@ -374,6 +528,7 @@ const update = async (req, id, payload) => {
 
   if (payload.formData) {
     Object.assign(doc, syncSummaryFields(payload.formData));
+    applyPacketProgress(doc);
   }
 
   await doc.save();
@@ -606,4 +761,5 @@ module.exports = {
   updateQuote,
   acceptQuote,
   formatAssessment,
+  formatAssessmentListItem,
 };

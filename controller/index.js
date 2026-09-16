@@ -7,6 +7,7 @@ module.exports = {
   AdminTeamController: require('./admin/AdminTeamController'),
   SubscriptionPlanController: require('./admin/SubscriptionPlanController'),
   InvitationController: require('./admin/InvitationController'),
+  AdminDashboardController: require('./admin/AdminDashboardController'),
   RegistrationController: require('./registration/RegistrationController'),
   HrStaffController: require('./agency/HrStaffController'),
   HiringPipelineController: require('./agency/HiringPipelineController'),

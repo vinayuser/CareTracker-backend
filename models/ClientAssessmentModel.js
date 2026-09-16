@@ -18,11 +18,17 @@ const ClientAssessmentSchema = new mongoose.Schema(
     carePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'CarePlan', default: null },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', default: null },
     createdByAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount' },
+    packetProgress: {
+      total: { type: Number, default: 15 },
+      saved: { type: Number, default: 0 },
+      started: { type: Number, default: 0 },
+    },
   },
   { timestamps: true },
 );
 
 ClientAssessmentSchema.index({ agencyId: 1, assessmentCode: 1 }, { unique: true });
 ClientAssessmentSchema.index({ agencyId: 1, status: 1 });
+ClientAssessmentSchema.index({ agencyId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('ClientAssessment', ClientAssessmentSchema);

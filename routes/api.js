@@ -48,6 +48,7 @@ router.post(
 router.get('/subscription-plans/active', Controller.SubscriptionPlanController.getActive);
 
 // Super admin — /api/admin/*
+router.get('/admin/dashboard', Auth.authenticate('super_admin'), Controller.AdminDashboardController.getDashboard);
 router.get('/admin/agencies', Auth.authenticate('super_admin'), Controller.AgencyController.getAll);
 router.get('/admin/agencies/options', Auth.authenticate('super_admin'), Controller.AgencyController.getOptions);
 router.get('/admin/agencies/lifecycle', Auth.authenticate('super_admin'), Controller.AgencyController.getLifecycleList);
