@@ -89,6 +89,12 @@ router.get('/admin/caregivers/stats', Auth.authenticate('super_admin'), Controll
 router.get('/admin/caregivers', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getCaregivers);
 router.get('/admin/caregivers/:id/overview', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getOverview);
 
+router.get('/admin/schedules/caregiver', Auth.authenticate('super_admin'), Controller.AdminSchedulesController.getCaregiverSchedule);
+
+router.get('/admin/evv/stats', Auth.authenticate('super_admin'), Controller.AdminEvvController.getStats);
+router.get('/admin/evv/employees', Auth.authenticate('super_admin'), Controller.AdminEvvController.getEmployees);
+router.get('/admin/evv/employees/:id', Auth.authenticate('super_admin'), Controller.AdminEvvController.getEmployeeDetail);
+
 router.get('/admin/team/stats', Auth.authenticate('super_admin'), Controller.AdminTeamController.getStats);
 router.get('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.getAll);
 router.post('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.create);
