@@ -1,0 +1,626 @@
+{
+  "info": {
+    "name": "CareTracker - Caregiver Portal",
+    "_postman_id": "9b6a3f9d-2f5e-4256-8467-a11b569d55b4",
+    "description": "APIs used by the Caregiver panel (`/caregiver/*`).\n\n**Setup**\n1. Set `baseUrl` (local: `http://localhost:3000/api`, prod: `https://caretraker.com/api/api`).\n2. Run **Auth \u2192 Login** with a caregiver email/userId + password \u2014 token is saved automatically.\n3. Fill `visitId`, `enrollmentId`, `leaveId` from list responses before calling detail/action endpoints.\n\nAll authenticated requests send `Authorization: Bearer {{token}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "caregiverId",
+      "value": ""
+    },
+    {
+      "key": "visitId",
+      "value": ""
+    },
+    {
+      "key": "enrollmentId",
+      "value": ""
+    },
+    {
+      "key": "leaveId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Accepts email or login userId. Saves `token` (and `caregiverId` when present) on success.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"caregiver@example.com\",\n  \"password\": \"password\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json?.data?.token;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('token', token);",
+                  "    console.log('Saved caregiver token');",
+                  "  }",
+                  "  const user = json?.data?.user;",
+                  "  if (user?.id || user?._id) {",
+                  "    pm.collectionVariables.set('caregiverId', String(user.id || user._id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Current caregiver session profile."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Caregiver\",\n  \"phone\": \"+1 555 0100\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password"
+              ]
+            },
+            "description": "Rotates session jti \u2014 other devices are signed out after password change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password\",\n  \"newPassword\": \"newpassword1\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"caregiver@example.com\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"paste-reset-token-from-email\",\n  \"password\": \"newpassword1\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "Get Caregiver Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "profile"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "dashboard"
+              ]
+            },
+            "description": "Today/week visits, enrollments summary, recent completed visits."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "EVV Enrollments",
+      "item": [
+        {
+          "name": "List Enrollments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/evv-enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "evv-enrollments"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Enrollment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/evv-enrollments/{{enrollmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "evv-enrollments",
+                "{{enrollmentId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/evv-enrollments/{{enrollmentId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "evv-enrollments",
+                "{{enrollmentId}}",
+                "submit"
+              ]
+            },
+            "description": "`formData` is required (object). Shape matches the enrollment form fields.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Caregiver\",\n    \"phone\": \"+1 555 0100\",\n    \"notes\": \"Submitted from Postman\"\n  }\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Visits / Clock",
+      "item": [
+        {
+          "name": "List Visits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/visits?from=2026-09-21&to=2026-10-05",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "visits"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-21",
+                  "description": "YYYY-MM-DD",
+                  "disabled": false
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-05",
+                  "description": "YYYY-MM-DD",
+                  "disabled": false
+                },
+                {
+                  "key": "date",
+                  "value": "",
+                  "description": "Single day YYYY-MM-DD (alternative to from/to)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "All",
+                  "description": "All | Scheduled | InProgress | Completed | Late | Missed | Exception",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Default window is today \u2192 +14 days when no date/from/to is sent."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Visit",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/visits/active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "visits",
+                "active"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Visit Timer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/visits/{{visitId}}/timer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "visits",
+                "{{visitId}}",
+                "timer"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check In",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/visits/{{visitId}}/check-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "visits",
+                "{{visitId}}",
+                "check-in"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"Mobile App\",\n  \"lat\": 40.7128,\n  \"lng\": -74.006,\n  \"exception_reason\": \"\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Out",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/visits/{{visitId}}/check-out",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "visits",
+                "{{visitId}}",
+                "check-out"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"Mobile App\",\n  \"lat\": 40.7128,\n  \"lng\": -74.006,\n  \"notes\": \"\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Leaves",
+      "item": [
+        {
+          "name": "My Leaves + Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/leaves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "leaves"
+              ]
+            },
+            "description": "Returns leave balance items and request list."
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Leave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/leaves",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "leaves"
+              ]
+            },
+            "description": "Use `typeKey` from the balance items returned by My Leaves.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"typeKey\": \"pto\",\n  \"startDate\": \"2026-10-01\",\n  \"endDate\": \"2026-10-02\",\n  \"reason\": \"Personal\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Leave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/caregiver/leaves/{{leaveId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "caregiver",
+                "leaves",
+                "{{leaveId}}",
+                "cancel"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
