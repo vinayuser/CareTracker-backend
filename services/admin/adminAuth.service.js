@@ -117,6 +117,13 @@ const issueAgencyToken = (account) => Auth.getToken({
   role: account.role || 'AGENCY_OWNER',
 });
 
+const ensureSessionJti = async (doc) => {
+  if (doc.jti) return doc.jti;
+  doc.jti = functions.generateRandomStringAndNumbers(20);
+  await doc.save();
+  return doc.jti;
+};
+
 const login = async (req) => {
   const loginId = String(req.body.email || '').trim().toLowerCase();
   if (!loginId) throw new Error(constants.MESSAGE.AUTH.INVALID_CREDENTIALS);
@@ -125,8 +132,8 @@ const login = async (req) => {
   if (admin) {
     if (admin.status === 'Inactive') throw new Error('Account is inactive');
     await admin.authenticate(req.body.password);
-    admin.jti = functions.generateRandomStringAndNumbers(20);
-    await admin.save();
+    // Reuse jti so existing device sessions stay valid (multi-device login).
+    await ensureSessionJti(admin);
 
     const token = Auth.getToken({ _id: admin._id, jti: admin.jti, type: 'admin' });
 
@@ -151,8 +158,8 @@ const login = async (req) => {
   } catch {
     throw new Error(constants.MESSAGE.AUTH.INVALID_CREDENTIALS);
   }
-  account.jti = functions.generateRandomStringAndNumbers(20);
-  await account.save();
+  // Reuse jti so existing device sessions stay valid (multi-device login).
+  await ensureSessionJti(account);
 
   return {
     token: issueAgencyToken(account),
