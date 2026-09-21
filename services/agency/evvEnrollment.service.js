@@ -199,9 +199,42 @@ const formatEvvEnrollment = (doc, extras = {}) => {
   return item;
 };
 
+const parseEnrollmentSeq = (code) => {
+  const match = String(code || '').match(/^EVV-(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+};
+
+/**
+ * Next unique enrollment code for an agency.
+ * Uses max existing sequence (not count) so deleted enrollments do not reuse codes.
+ */
 const generateEnrollmentCode = async (agencyId) => {
-  const count = await Model.EvvEnrollmentModel.countDocuments({ agencyId });
-  return `EVV-${String(10001 + count).padStart(5, '0')}`;
+  const codes = await Model.EvvEnrollmentModel.distinct('enrollmentCode', { agencyId });
+  let maxSeq = 10000;
+  codes.forEach((code) => {
+    const seq = parseEnrollmentSeq(code);
+    if (seq > maxSeq) maxSeq = seq;
+  });
+  return `EVV-${String(maxSeq + 1).padStart(5, '0')}`;
+};
+
+const createEnrollmentWithUniqueCode = async (payload) => {
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await Model.EvvEnrollmentModel.create({
+        ...payload,
+        enrollmentCode: await generateEnrollmentCode(payload.agencyId),
+      });
+    } catch (err) {
+      lastError = err;
+      const isDup = err?.code === 11000
+        && (String(err?.message || '').includes('enrollmentCode')
+          || String(err?.message || '').includes('agencyId_1_enrollmentCode_1'));
+      if (!isDup) throw err;
+    }
+  }
+  throw lastError;
 };
 
 /** One enrollment per care-need (service) assignment — not one per caregiver. */
@@ -309,9 +342,8 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
     const serviceLabel = (assignment.serviceAreas || []).join(', ') || assignment.serviceAreaKey;
 
     if (!enrollment) {
-      enrollment = await Model.EvvEnrollmentModel.create({
+      enrollment = await createEnrollmentWithUniqueCode({
         agencyId,
-        enrollmentCode: await generateEnrollmentCode(agencyId),
         carePlanId: carePlanDoc._id,
         clientId,
         caregiverAccountId: caregiverId,
@@ -399,18 +431,72 @@ const getOptions = async () => ({
 
 const getStats = async (req) => {
   const agencyId = getAgencyId(req);
-  const list = await Model.EvvEnrollmentModel.find({ agencyId });
+  const rows = await Model.EvvEnrollmentModel.aggregate([
+    { $match: { agencyId } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byStatus = Object.fromEntries(rows.map((r) => [r._id, r.count]));
+  const pending = byStatus.Pending || 0;
+  const submitted = byStatus.Submitted || 0;
+  const verified = byStatus.Verified || 0;
+  const rejected = byStatus.Rejected || 0;
+
   return {
-    total: list.length,
-    pending: list.filter((i) => i.status === 'Pending').length,
-    submitted: list.filter((i) => i.status === 'Submitted').length,
-    verified: list.filter((i) => i.status === 'Verified').length,
-    rejected: list.filter((i) => i.status === 'Rejected').length,
+    total: pending + submitted + verified + rejected,
+    pending,
+    submitted,
+    verified,
+    rejected,
   };
 };
 
+const LIST_PROJECTION = {
+  enrollmentCode: 1,
+  status: 1,
+  clientName: 1,
+  caregiverName: 1,
+  planCode: 1,
+  serviceAreas: 1,
+  serviceAreaKey: 1,
+  clientId: 1,
+  carePlanId: 1,
+  caregiverAccountId: 1,
+  enrollmentDate: 1,
+  submittedAt: 1,
+  verifiedAt: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const formatEvvEnrollmentListItem = (doc) => ({
+  id: String(doc._id),
+  enrollmentCode: doc.enrollmentCode || '',
+  status: doc.status || 'Pending',
+  clientName: doc.clientName || '',
+  caregiverName: doc.caregiverName || '',
+  planCode: doc.planCode || '',
+  serviceAreas: Array.isArray(doc.serviceAreas) ? doc.serviceAreas : [],
+  serviceAreaKey: doc.serviceAreaKey || '',
+  clientId: doc.clientId ? String(doc.clientId) : '',
+  carePlanId: doc.carePlanId ? String(doc.carePlanId) : '',
+  caregiverAccountId: doc.caregiverAccountId ? String(doc.caregiverAccountId) : '',
+  enrollmentDate: doc.enrollmentDate || '',
+  submittedAt: doc.submittedAt || null,
+  verifiedAt: doc.verifiedAt || null,
+  createdAt: doc.createdAt || null,
+  updatedAt: doc.updatedAt || null,
+});
+
 const getAll = async (req, query = {}) => {
   const agencyId = getAgencyId(req);
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 5));
   const filter = { agencyId };
 
   if (query.status && query.status !== 'All') filter.status = query.status;
@@ -418,7 +504,7 @@ const getAll = async (req, query = {}) => {
   if (query.care_plan_id) filter.carePlanId = query.care_plan_id;
   if (query.caregiver_id) filter.caregiverAccountId = query.caregiver_id;
   if (query.search) {
-    const regex = new RegExp(String(query.search).trim(), 'i');
+    const regex = new RegExp(String(query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$or = [
       { enrollmentCode: regex },
       { clientName: regex },
@@ -429,12 +515,27 @@ const getAll = async (req, query = {}) => {
     ];
   }
 
-  const list = await Model.EvvEnrollmentModel.find(filter)
-    .populate('clientId')
-    .populate('carePlanId')
-    .sort({ createdAt: -1 });
+  const [total, list] = await Promise.all([
+    Model.EvvEnrollmentModel.countDocuments(filter),
+    Model.EvvEnrollmentModel.find(filter)
+      .select(LIST_PROJECTION)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
 
-  return list.map((doc) => formatEvvEnrollment(doc, { client: doc.clientId, carePlan: doc.carePlanId }));
+  return {
+    list: list.map(formatEvvEnrollmentListItem),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit) || 1),
+      from: total === 0 ? 0 : (page - 1) * limit + 1,
+      to: Math.min(page * limit, total),
+    },
+  };
 };
 
 const getById = async (req, id) => {

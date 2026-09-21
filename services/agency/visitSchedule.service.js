@@ -1048,9 +1048,51 @@ const removeVisitSeries = async (req, visit, schedule) => {
   };
 };
 
-const getVisits = async (req, query = {}) => {
-  const agencyId = getAgencyId(req);
-  await markMissedVisits(agencyId);
+const VISIT_LIST_PROJECTION = {
+  visitCode: 1,
+  scheduleId: 1,
+  carePlanId: 1,
+  clientId: 1,
+  caregiverAccountId: 1,
+  serviceArea: 1,
+  careNeedAreaKey: 1,
+  clientName: 1,
+  caregiverName: 1,
+  address: 1,
+  timezone: 1,
+  scheduledDate: 1,
+  scheduledStartAt: 1,
+  scheduledEndAt: 1,
+  earliestCheckInAt: 1,
+  latestCheckInAt: 1,
+  lateCheckInUntil: 1,
+  graceMinutes: 1,
+  status: 1,
+  checkInAt: 1,
+  checkOutAt: 1,
+  checkInMethod: 1,
+  checkOutMethod: 1,
+  lateCheckIn: 1,
+  exceptionReason: 1,
+  notes: 1,
+  isTimerRunning: 1,
+  billableMinutes: 1,
+  hourlyRateSnapshot: 1,
+  amountSnapshot: 1,
+  invoiceId: 1,
+  invoiced: 1,
+  geoWarning: 1,
+  exceptionResolved: 1,
+  approvalStatus: 1,
+  approvedBy: 1,
+  approvedByName: 1,
+  approvedAt: 1,
+  rejectionReason: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const buildVisitListFilter = (agencyId, query = {}) => {
   const filter = { agencyId };
   if (query.status && query.status !== 'All') filter.status = query.status;
   if (query.caregiver_id) filter.caregiverAccountId = query.caregiver_id;
@@ -1063,8 +1105,147 @@ const getVisits = async (req, query = {}) => {
     if (query.to) filter.scheduledDate.$lte = query.to;
   }
 
-  const list = await Model.VisitModel.find(filter).sort({ scheduledStartAt: 1 });
-  return list.map(formatVisit);
+  const evvMode = String(query.evv_mode || query.evvMode || '').toLowerCase();
+  if (evvMode === 'alerts') {
+    filter.$or = [
+      { lateCheckIn: true },
+      { status: { $in: ['Exception', 'Missed'] } },
+      { approvalStatus: 'Rejected' },
+    ];
+  } else if (evvMode === 'unverified') {
+    filter.status = { $in: ['Scheduled', 'Late', 'InProgress'] };
+    filter.checkOutAt = null;
+  }
+
+  const evvStatus = String(query.evv_status || query.evvStatus || '').trim();
+  if (evvStatus && evvStatus !== 'All' && evvStatus !== 'Alerts') {
+    if (evvStatus === 'Pending Approval') {
+      filter.checkOutAt = { $ne: null };
+      filter.approvalStatus = { $in: ['Pending', 'None'] };
+    } else if (evvStatus === 'Verified') {
+      filter.checkOutAt = { $ne: null };
+      filter.approvalStatus = 'Approved';
+    } else if (evvStatus === 'Rejected') {
+      filter.approvalStatus = 'Rejected';
+    } else if (evvStatus === 'Exception') {
+      filter.$or = [{ lateCheckIn: true }, { status: 'Exception' }];
+    } else if (evvStatus === 'Missed') {
+      filter.status = 'Missed';
+    } else if (evvStatus === 'In Progress') {
+      filter.status = 'InProgress';
+      filter.checkOutAt = null;
+    } else if (evvStatus === 'Scheduled') {
+      filter.status = { $in: ['Scheduled', 'Late'] };
+      filter.checkOutAt = null;
+    } else if (evvStatus === 'Unverified') {
+      filter.status = { $in: ['Scheduled', 'Late', 'InProgress'] };
+      filter.checkOutAt = null;
+    }
+  }
+
+  if (query.search) {
+    const regex = new RegExp(String(query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const searchClause = {
+      $or: [
+        { visitCode: regex },
+        { clientName: regex },
+        { caregiverName: regex },
+        { serviceArea: regex },
+        { exceptionReason: regex },
+        { rejectionReason: regex },
+      ],
+    };
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, searchClause];
+      delete filter.$or;
+    } else {
+      Object.assign(filter, searchClause);
+    }
+  }
+
+  return filter;
+};
+
+const countWith = (baseFilter, extra) =>
+  Model.VisitModel.countDocuments({ $and: [baseFilter, extra] });
+
+const buildVisitSummary = async (filter) => {
+  const [
+    total,
+    verified,
+    pending,
+    missed,
+    rejected,
+    exceptions,
+    unverified,
+  ] = await Promise.all([
+    Model.VisitModel.countDocuments(filter),
+    countWith(filter, { checkOutAt: { $ne: null }, approvalStatus: 'Approved' }),
+    countWith(filter, {
+      checkOutAt: { $ne: null },
+      $or: [{ approvalStatus: 'Pending' }, { approvalStatus: 'None' }, { approvalStatus: { $exists: false } }],
+    }),
+    countWith(filter, { status: 'Missed' }),
+    countWith(filter, { approvalStatus: 'Rejected' }),
+    countWith(filter, { lateCheckIn: true }),
+    countWith(filter, {
+      status: { $in: ['Scheduled', 'Late', 'InProgress'] },
+      checkOutAt: null,
+    }),
+  ]);
+
+  return {
+    total,
+    verified,
+    pending,
+    exceptions,
+    missed,
+    rejected,
+    unverified,
+  };
+};
+
+const getVisits = async (req, query = {}) => {
+  const agencyId = getAgencyId(req);
+  await markMissedVisits(agencyId);
+  const filter = buildVisitListFilter(agencyId, query);
+  const wantsPagination = query.page != null || query.limit != null || query.paginate === '1' || query.paginate === 'true';
+
+  if (!wantsPagination) {
+    const list = await Model.VisitModel.find(filter)
+      .select(VISIT_LIST_PROJECTION)
+      .sort({ scheduledStartAt: 1 })
+      .lean();
+    return list.map((doc) => formatVisit(doc));
+  }
+
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 5));
+  const includeSummary = query.summary === '1' || query.summary === 'true' || query.include_summary === '1';
+
+  const [total, list, summary] = await Promise.all([
+    Model.VisitModel.countDocuments(filter),
+    Model.VisitModel.find(filter)
+      .select(VISIT_LIST_PROJECTION)
+      .sort({ scheduledStartAt: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    includeSummary ? buildVisitSummary(filter) : Promise.resolve(undefined),
+  ]);
+
+  return {
+    list: list.map((doc) => formatVisit(doc)),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit) || 1),
+      from: total === 0 ? 0 : (page - 1) * limit + 1,
+      to: Math.min(page * limit, total),
+    },
+    summary,
+  };
 };
 
 const getCarePlanScheduleSources = async (req, carePlanId) => {

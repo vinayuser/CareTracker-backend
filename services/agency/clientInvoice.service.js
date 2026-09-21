@@ -131,11 +131,63 @@ const enrichInvoiceLines = async (invoice) => {
 
 const getAll = async (req, query = {}) => {
   const agencyId = getAgencyId(req);
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 5));
   const filter = { agencyId };
   if (query.client_id) filter.clientId = query.client_id;
-  if (query.status) filter.status = query.status;
-  const list = await Model.ClientInvoiceModel.find(filter).sort({ createdAt: -1 });
-  return list.map(formatInvoice);
+  if (query.status && query.status !== 'All') filter.status = query.status;
+
+  const [total, list] = await Promise.all([
+    Model.ClientInvoiceModel.countDocuments(filter),
+    Model.ClientInvoiceModel.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $project: {
+          invoiceCode: 1,
+          clientId: 1,
+          clientName: 1,
+          clientEmail: 1,
+          periodFrom: 1,
+          periodTo: 1,
+          status: 1,
+          total: 1,
+          subtotal: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          lineCount: { $size: { $ifNull: ['$lines', []] } },
+        },
+      },
+    ]),
+  ]);
+
+  return {
+    list: list.map((doc) => ({
+      id: String(doc._id),
+      invoiceCode: doc.invoiceCode || '',
+      clientId: doc.clientId ? String(doc.clientId) : '',
+      clientName: doc.clientName || '',
+      clientEmail: doc.clientEmail || '',
+      periodFrom: doc.periodFrom || '',
+      periodTo: doc.periodTo || '',
+      status: doc.status || 'Draft',
+      total: doc.total || 0,
+      subtotal: doc.subtotal || 0,
+      lineCount: doc.lineCount || 0,
+      createdAt: doc.createdAt || null,
+      updatedAt: doc.updatedAt || null,
+    })),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit) || 1),
+      from: total === 0 ? 0 : (page - 1) * limit + 1,
+      to: Math.min(page * limit, total),
+    },
+  };
 };
 
 const getById = async (req, id) => {
