@@ -1,4 +1,5 @@
 const Model = require('../../models/index');
+const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
 
 const STAFF_ROLES = ['AGENCY_OWNER', 'HR', 'CAREGIVER'];
@@ -81,17 +82,23 @@ const assertAgency = async (agencyId) => {
   return agency;
 };
 
-const formatUser = (account) => ({
+const formatUser = (account, extras = {}) => ({
   id: String(account._id),
   name: account.fullName || '',
+  fullName: account.fullName || '',
   email: account.email || '',
   phone: account.phone || '',
+  userId: account.userId || '',
   role: account.role,
   roleLabel: mapRoleLabel(account.role),
   status: account.status || 'Active',
   joinedOn: toIsoDate(account.createdAt),
+  createdAt: account.createdAt || null,
+  dateOfBirth: account.dateOfBirth || '',
   profilePic: account.profilePicPath ? buildUploadUrl(account.profilePicPath) : '',
   employeeId: account.employeeId || '',
+  agencyId: String(account.agencyId || extras.agencyId || ''),
+  agencyName: extras.agencyName || '',
 });
 
 const countCreatedInRange = (agencyId, roles, status, start, end) => {
@@ -164,7 +171,8 @@ const getStats = async (agencyId) => {
 };
 
 const getUsers = async (agencyId, query = {}) => {
-  await assertAgency(agencyId);
+  const agency = await assertAgency(agencyId);
+  const agencyName = agency.name || '';
 
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(query.limit) || 10));
@@ -195,14 +203,14 @@ const getUsers = async (agencyId, query = {}) => {
   const [total, rows] = await Promise.all([
     Model.AgencyAccountModel.countDocuments(filter),
     Model.AgencyAccountModel.find(filter)
-      .select('fullName email phone role status createdAt profilePicPath employeeId')
+      .select('fullName email phone role status createdAt profilePicPath employeeId userId dateOfBirth agencyId')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
   ]);
 
-  const list = rows.map(formatUser);
+  const list = rows.map((row) => formatUser(row, { agencyId, agencyName }));
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return {
@@ -216,6 +224,54 @@ const getUsers = async (agencyId, query = {}) => {
       to: Math.min(page * limit, total),
     },
   };
+};
+
+const getUserById = async (agencyId, userId) => {
+  const agency = await assertAgency(agencyId);
+  const account = await Model.AgencyAccountModel.findOne({
+    _id: userId,
+    agencyId,
+    role: { $in: STAFF_ROLES },
+  }).lean();
+  if (!account) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  return formatUser(account, { agencyId, agencyName: agency.name || '' });
+};
+
+const updateStatus = async (agencyId, userId, status) => {
+  await assertAgency(agencyId);
+  const account = await Model.AgencyAccountModel.findOne({
+    _id: userId,
+    agencyId,
+    role: { $in: STAFF_ROLES },
+  });
+  if (!account) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const next = String(status || '').trim();
+  if (!['Active', 'Inactive', 'Pending'].includes(next)) {
+    const err = new Error('Invalid status');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  account.status = next;
+  if (next === 'Inactive') {
+    account.jti = functions.generateRandomStringAndNumbers(20);
+  }
+  await account.save();
+
+  const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+  return formatUser(account.toObject ? account.toObject() : account, {
+    agencyId,
+    agencyName: agency?.name || '',
+  });
 };
 
 const getSchedules = async (agencyId, query = {}) => {
@@ -306,48 +362,53 @@ const getSchedules = async (agencyId, query = {}) => {
   };
 };
 
-const mapEvvStatus = (visit) => {
-  if (visit.approvalStatus === 'Approved') return 'Verified';
-  if (visit.approvalStatus === 'Pending') return 'Pending';
-  if (visit.approvalStatus === 'Rejected') return 'Rejected';
-  if (visit.checkOutAt) return 'Pending';
-  if (visit.checkInAt) return 'In Progress';
-  return visit.status || 'Scheduled';
-};
+const formatAdminEvvEnrollment = (doc, account) => ({
+  id: String(doc._id),
+  enrollmentCode: doc.enrollmentCode || '',
+  status: doc.status || 'Pending',
+  userId: String(doc.caregiverAccountId || ''),
+  userName: account?.fullName || doc.caregiverName || 'Caregiver',
+  profilePic: account?.profilePicPath ? buildUploadUrl(account.profilePicPath) : '',
+  date: doc.enrollmentDate || toIsoDate(doc.submittedAt || doc.createdAt) || '',
+  clientName: doc.clientName || '—',
+  planCode: doc.planCode || '',
+  serviceAreas: Array.isArray(doc.serviceAreas) ? doc.serviceAreas : [],
+  caregiverName: account?.fullName || doc.caregiverName || 'Caregiver',
+  caregiverAccountId: String(doc.caregiverAccountId || ''),
+  clientId: doc.clientId ? String(doc.clientId) : '',
+  carePlanId: doc.carePlanId ? String(doc.carePlanId) : '',
+  enrollmentDate: doc.enrollmentDate || '',
+  formData: doc.formData || undefined,
+  submittedAt: doc.submittedAt || null,
+  verifiedAt: doc.verifiedAt || null,
+});
 
 const getEvvForms = async (agencyId, query = {}) => {
   await assertAgency(agencyId);
 
-  const weekStart = query.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(query.weekStart)
-    ? query.weekStart
-    : startOfWeekMonday(new Date());
-  const weekEnd = query.weekEnd && /^\d{4}-\d{2}-\d{2}$/.test(query.weekEnd)
-    ? query.weekEnd
-    : addDaysKey(weekStart, 6);
+  // Enrollment forms are independent of the schedules week picker.
   const userId = String(query.userId || '').trim();
   const status = String(query.status || 'All').trim();
-  const limit = Math.min(50, Math.max(1, Number(query.limit) || 10));
+  const defaultLimit = userId ? 100 : 20;
+  const limit = Math.min(200, Math.max(1, Number(query.limit) || defaultLimit));
 
-  const filter = {
-    agencyId,
-    scheduledDate: { $gte: weekStart, $lte: weekEnd },
-    checkInAt: { $ne: null },
-  };
+  const filter = { agencyId };
   if (userId) filter.caregiverAccountId = userId;
 
   if (status && status !== 'All' && status !== 'All Status') {
-    if (status === 'Verified') filter.approvalStatus = 'Approved';
-    else if (status === 'Pending') filter.approvalStatus = { $in: ['Pending', 'None'] };
-    else if (status === 'Rejected') filter.approvalStatus = 'Rejected';
+    if (status === 'Verified') filter.status = 'Verified';
+    else if (status === 'Pending') filter.status = { $in: ['Pending', 'Submitted'] };
+    else if (status === 'Submitted') filter.status = 'Submitted';
+    else if (status === 'Rejected') filter.status = 'Rejected';
   }
 
-  const visits = await Model.VisitModel.find(filter)
-    .select('caregiverAccountId caregiverName clientName scheduledDate checkInAt checkOutAt timezone approvalStatus billableMinutes status')
-    .sort({ scheduledDate: -1, checkInAt: -1 })
+  const enrollments = await Model.EvvEnrollmentModel.find(filter)
+    .select('enrollmentCode status clientName caregiverName caregiverAccountId planCode serviceAreas enrollmentDate submittedAt verifiedAt createdAt clientId carePlanId')
+    .sort({ updatedAt: -1, createdAt: -1 })
     .limit(limit)
     .lean();
 
-  const userIds = [...new Set(visits.map((v) => String(v.caregiverAccountId)))];
+  const userIds = [...new Set(enrollments.map((e) => String(e.caregiverAccountId)).filter(Boolean))];
   const accounts = userIds.length
     ? await Model.AgencyAccountModel.find({ _id: { $in: userIds } }).select('fullName profilePicPath').lean()
     : [];
@@ -358,39 +419,34 @@ const getEvvForms = async (agencyId, query = {}) => {
     .sort({ fullName: 1 })
     .lean();
 
-  const list = visits.map((visit) => {
-    const account = accountMap.get(String(visit.caregiverAccountId));
-    const hours = visit.billableMinutes
-      ? Number((visit.billableMinutes / 60).toFixed(2))
-      : hoursBetween(visit.checkInAt, visit.checkOutAt);
-
-    return {
-      id: String(visit._id),
-      userId: String(visit.caregiverAccountId),
-      userName: account?.fullName || visit.caregiverName || 'Caregiver',
-      profilePic: account?.profilePicPath ? buildUploadUrl(account.profilePicPath) : '',
-      date: visit.scheduledDate,
-      clientName: visit.clientName || '—',
-      checkIn: formatClock(visit.checkInAt, visit.timezone),
-      checkOut: formatClock(visit.checkOutAt, visit.timezone),
-      hours: hours == null ? '—' : hours,
-      status: mapEvvStatus(visit),
-    };
-  });
-
   return {
-    weekStart,
-    weekEnd,
-    list,
+    list: enrollments.map((doc) => formatAdminEvvEnrollment(doc, accountMap.get(String(doc.caregiverAccountId)))),
     users: caregivers.map((c) => ({ id: String(c._id), name: c.fullName || '' })),
   };
+};
+
+const getEvvFormDetail = async (agencyId, enrollmentId) => {
+  await assertAgency(agencyId);
+  const doc = await Model.EvvEnrollmentModel.findOne({ _id: enrollmentId, agencyId }).lean();
+  if (!doc) {
+    const err = new Error('EVV form not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  const account = await Model.AgencyAccountModel.findById(doc.caregiverAccountId)
+    .select('fullName profilePicPath')
+    .lean();
+  return formatAdminEvvEnrollment(doc, account);
 };
 
 module.exports = {
   getStats,
   getUsers,
+  getUserById,
+  updateStatus,
   getSchedules,
   getEvvForms,
+  getEvvFormDetail,
   ROLE_LABELS,
   startOfWeekMonday,
 };

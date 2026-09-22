@@ -180,7 +180,7 @@ const getCaregivers = async (query = {}) => {
   const [total, rows] = await Promise.all([
     Model.AgencyAccountModel.countDocuments(filter),
     Model.AgencyAccountModel.find(filter)
-      .select('fullName email phone status agencyId profilePicPath employeeId candidateId')
+      .select('fullName email phone status agencyId profilePicPath employeeId candidateId userId dateOfBirth createdAt')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -251,14 +251,19 @@ const getCaregivers = async (query = {}) => {
     return {
       id: String(row._id),
       name,
+      fullName: name,
       initials: initials(name),
       caregiverCode: caregiverCode(row),
       agencyId: String(row.agencyId || ''),
       agencyName: agencyMap.get(String(row.agencyId)) || '—',
       phone: row.phone || candidate?.phone || '',
       email: row.email || '',
+      userId: row.userId || '',
+      employeeId: row.employeeId || '',
+      dateOfBirth: row.dateOfBirth || '',
       status: row.status || 'Pending',
       profilePic,
+      createdAt: row.createdAt || null,
       associatedClients: clients,
       nextSchedule: next
         ? {
@@ -464,9 +469,18 @@ const getOverview = async (id, req) => {
     caregiver: {
       id: String(account._id),
       name: account.fullName || '',
+      fullName: account.fullName || '',
+      email: account.email || '',
+      phone: account.phone || '',
+      userId: account.userId || '',
+      employeeId: account.employeeId || '',
+      dateOfBirth: account.dateOfBirth || '',
       caregiverCode: caregiverCode(account),
+      agencyId: String(account.agencyId || ''),
       agencyName: agency?.name || '—',
       status: account.status || 'Pending',
+      profilePic: account.profilePicPath ? buildUploadUrl(account.profilePicPath, req) : '',
+      createdAt: account.createdAt || null,
     },
     clients: associatedClients,
     documents,
@@ -482,8 +496,40 @@ const getOverview = async (id, req) => {
   };
 };
 
+const updateStatus = async (id, status) => {
+  const account = await Model.AgencyAccountModel.findOne({ _id: id, role: 'CAREGIVER' });
+  if (!account) throw new Error('Caregiver Not Found');
+
+  const next = String(status || '').trim();
+  if (!['Active', 'Inactive', 'Pending'].includes(next)) {
+    const err = new Error('Invalid status');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  account.status = next;
+  if (next === 'Inactive') {
+    account.jti = functions.generateRandomStringAndNumbers(20);
+  }
+  await account.save();
+
+  const agency = await Model.AgencyModel.findById(account.agencyId).select('name').lean();
+  return {
+    id: String(account._id),
+    name: account.fullName || '',
+    caregiverCode: caregiverCode(account),
+    agencyId: String(account.agencyId || ''),
+    agencyName: agency?.name || '—',
+    phone: account.phone || '',
+    email: account.email || '',
+    status: account.status || 'Pending',
+    profilePic: account.profilePicPath ? buildUploadUrl(account.profilePicPath) : '',
+  };
+};
+
 module.exports = {
   getStats,
   getCaregivers,
   getOverview,
+  updateStatus,
 };

@@ -143,6 +143,15 @@ module.exports.getCaregiverDashboard = async (req, res, next) => {
   }
 };
 
+module.exports.getCaregiverPayroll = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.getCaregiverPayroll(req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.checkIn = async (req, res, next) => {
   try {
     await Validation.VisitSchedule.checkIn.validateAsync(req.body || {});

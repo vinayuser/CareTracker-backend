@@ -2671,6 +2671,193 @@ const getCaregiverDashboard = async (req) => {
   };
 };
 
+const pad2Date = (n) => String(n).padStart(2, '0');
+
+const formatMoneyAmount = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+const formatPeriodLabel = (fromKey, toKey) => {
+  const fmt = (key) => {
+    const d = new Date(`${key}T12:00:00`);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  return `${fmt(fromKey).replace(',', '')} – ${fmt(toKey)}`;
+};
+
+const lastDayOfMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+const payPeriodForDateKey = (dateKey) => {
+  const [y, m, d] = String(dateKey).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  if (d <= 15) {
+    const from = `${y}-${pad2Date(m)}-01`;
+    const to = `${y}-${pad2Date(m)}-15`;
+    return { key: `${y}-${pad2Date(m)}-H1`, from, to, label: formatPeriodLabel(from, to) };
+  }
+  const last = lastDayOfMonth(y, m);
+  const from = `${y}-${pad2Date(m)}-16`;
+  const to = `${y}-${pad2Date(m)}-${pad2Date(last)}`;
+  return { key: `${y}-${pad2Date(m)}-H2`, from, to, label: formatPeriodLabel(from, to) };
+};
+
+const visitEarnings = (visit) => {
+  const minutes = Number(visit.billableMinutes);
+  const mins = Number.isFinite(minutes) && minutes > 0
+    ? minutes
+    : (visit.checkInAt && visit.checkOutAt
+      ? Math.max(0, (new Date(visit.checkOutAt) - new Date(visit.checkInAt)) / 60000)
+      : 0);
+  const hours = Number((mins / 60).toFixed(2));
+  const rate = Number(visit.hourlyRateSnapshot);
+  const amountFromSnapshot = Number(visit.amountSnapshot);
+  const safeRate = Number.isFinite(rate) && rate > 0 ? rate : 25;
+  const amount = Number.isFinite(amountFromSnapshot) && amountFromSnapshot > 0
+    ? amountFromSnapshot
+    : Number(((mins / 60) * safeRate).toFixed(2));
+  return { hours, amount, rate: safeRate };
+};
+
+const getCaregiverPayroll = async (req) => {
+  const caregiver = getCaregiverAccount(req);
+  const agencyId = getCaregiverAgencyId(req);
+  const caregiverId = caregiver._id || caregiver.id;
+
+  const tzSample = await Model.VisitModel.findOne({ agencyId, caregiverAccountId: caregiverId })
+    .sort({ scheduledStartAt: -1 })
+    .select('timezone');
+  const displayTz = resolveTimezone(tzSample?.timezone);
+  const todayKey = dateKeyInZone(new Date(), displayTz);
+  const currentPeriod = payPeriodForDateKey(todayKey);
+
+  const historyStart = new Date();
+  historyStart.setUTCMonth(historyStart.getUTCMonth() - 6);
+  const historyFrom = dateKeyInZone(historyStart, displayTz);
+
+  const visits = await Model.VisitModel.find({
+    agencyId,
+    caregiverAccountId: caregiverId,
+    scheduledDate: { $gte: historyFrom, $lte: todayKey },
+    $or: [
+      { checkOutAt: { $ne: null } },
+      { status: { $in: ['InProgress', 'Exception'] }, checkInAt: { $ne: null } },
+    ],
+  })
+    .select('visitCode scheduledDate checkInAt checkOutAt billableMinutes hourlyRateSnapshot amountSnapshot clientName serviceArea approvalStatus status timezone')
+    .sort({ scheduledDate: -1, checkInAt: -1 })
+    .lean();
+
+  const buckets = new Map();
+
+  visits.forEach((visit) => {
+    const period = payPeriodForDateKey(visit.scheduledDate);
+    if (!period) return;
+    if (!buckets.has(period.key)) {
+      buckets.set(period.key, {
+        ...period,
+        hours: 0,
+        amount: 0,
+        visitCount: 0,
+        visits: [],
+      });
+    }
+    const bucket = buckets.get(period.key);
+    const inProgress = !visit.checkOutAt && visit.checkInAt;
+    let hours = 0;
+    let amount = 0;
+    let rate = 25;
+
+    if (inProgress) {
+      const mins = Math.max(0, (Date.now() - new Date(visit.checkInAt).getTime()) / 60000);
+      const rateSample = Number(visit.hourlyRateSnapshot);
+      rate = Number.isFinite(rateSample) && rateSample > 0 ? rateSample : 25;
+      hours = Number((mins / 60).toFixed(2));
+      amount = Number(((mins / 60) * rate).toFixed(2));
+    } else {
+      const earned = visitEarnings(visit);
+      hours = earned.hours;
+      amount = earned.amount;
+      rate = earned.rate;
+    }
+
+    bucket.hours = Number((bucket.hours + hours).toFixed(2));
+    bucket.amount = Number((bucket.amount + amount).toFixed(2));
+    bucket.visitCount += 1;
+    bucket.visits.push({
+      id: String(visit._id),
+      visitCode: visit.visitCode || '',
+      date: visit.scheduledDate,
+      clientName: visit.clientName || '—',
+      service: visit.serviceArea || 'Visit',
+      hours,
+      rate,
+      amount,
+      status: displayVisitStatus(visit),
+      inProgress: Boolean(inProgress),
+    });
+  });
+
+  const periods = [...buckets.values()]
+    .sort((a, b) => String(b.from).localeCompare(String(a.from)))
+    .map((period) => {
+      const isCurrent = currentPeriod && period.key === currentPeriod.key;
+      const payoutDate = isCurrent
+        ? 'Est. end of period'
+        : (() => {
+          const [y, m, d] = period.to.split('-').map(Number);
+          const pay = new Date(Date.UTC(y, m - 1, d + 1));
+          return pay.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        })();
+      return {
+        key: period.key,
+        period: period.label,
+        from: period.from,
+        to: period.to,
+        hours: period.hours,
+        amount: period.amount,
+        amountLabel: formatMoneyAmount(period.amount),
+        visitCount: period.visitCount,
+        status: isCurrent ? 'Pending' : 'Paid',
+        payoutDate,
+        isCurrent: Boolean(isCurrent),
+        visits: period.visits,
+      };
+    });
+
+  const current = periods.find((p) => p.isCurrent) || {
+    key: currentPeriod?.key || '',
+    period: currentPeriod?.label || 'Current period',
+    from: currentPeriod?.from || todayKey,
+    to: currentPeriod?.to || todayKey,
+    hours: 0,
+    amount: 0,
+    amountLabel: formatMoneyAmount(0),
+    visitCount: 0,
+    status: 'Pending',
+    payoutDate: 'Est. end of period',
+    isCurrent: true,
+    visits: [],
+  };
+
+  const avgRate = (() => {
+    const rates = visits
+      .map((v) => Number(v.hourlyRateSnapshot))
+      .filter((r) => Number.isFinite(r) && r > 0);
+    if (!rates.length) return 25;
+    return Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 100) / 100;
+  })();
+
+  return {
+    current: {
+      ...current,
+      amountLabel: formatMoneyAmount(current.amount),
+      note: current.hours
+        ? `Based on ${current.hours.toFixed(1)} hrs this period @ ~$${avgRate}/hr`
+        : 'No clocked hours in the current pay period yet',
+    },
+    history: periods.filter((p) => !p.isCurrent),
+    periods,
+  };
+};
+
 module.exports = {
   getOptions,
   getScheduleStats,
@@ -2697,6 +2884,7 @@ module.exports = {
   getEvvDashboard,
   getAgencyDashboard,
   getCaregiverDashboard,
+  getCaregiverPayroll,
   getOrCreateEvvSettings,
   computeLiveElapsedSeconds,
   formatVisit,

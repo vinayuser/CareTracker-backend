@@ -80,6 +80,9 @@ router.get('/admin/users/stats', Auth.authenticate('super_admin'), Controller.Ad
 router.get('/admin/users', Auth.authenticate('super_admin'), Controller.AdminUsersController.getUsers);
 router.get('/admin/users/schedules', Auth.authenticate('super_admin'), Controller.AdminUsersController.getSchedules);
 router.get('/admin/users/evv-forms', Auth.authenticate('super_admin'), Controller.AdminUsersController.getEvvForms);
+router.get('/admin/users/evv-forms/:id', Auth.authenticate('super_admin'), Controller.AdminUsersController.getEvvFormDetail);
+router.get('/admin/users/:id', Auth.authenticate('super_admin'), Controller.AdminUsersController.getUserById);
+router.patch('/admin/users/:id/status', Auth.authenticate('super_admin'), Controller.AdminUsersController.updateStatus);
 
 router.get('/admin/clients/stats', Auth.authenticate('super_admin'), Controller.AdminClientsController.getStats);
 router.get('/admin/clients', Auth.authenticate('super_admin'), Controller.AdminClientsController.getClients);
@@ -88,6 +91,7 @@ router.get('/admin/clients/:id/overview', Auth.authenticate('super_admin'), Cont
 router.get('/admin/caregivers/stats', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getStats);
 router.get('/admin/caregivers', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getCaregivers);
 router.get('/admin/caregivers/:id/overview', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getOverview);
+router.patch('/admin/caregivers/:id/status', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.updateStatus);
 
 router.get('/admin/schedules/caregiver', Auth.authenticate('super_admin'), Controller.AdminSchedulesController.getCaregiverSchedule);
 
@@ -296,6 +300,7 @@ router.get('/agency/interview-feedback/options', Auth.authenticate('agency_owner
 // Caregiver portal — /api/caregiver/*
 router.get('/caregiver/profile', Auth.authenticate('caregiver'), Controller.CaregiverController.getProfile);
 router.get('/caregiver/dashboard', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getCaregiverDashboard);
+router.get('/caregiver/payroll', Auth.authenticate('caregiver'), Controller.VisitScheduleController.getCaregiverPayroll);
 router.get('/caregiver/evv-enrollments', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getAll);
 router.get('/caregiver/evv-enrollments/:id', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.getById);
 router.post('/caregiver/evv-enrollments/:id/submit', Auth.authenticate('caregiver'), Controller.CaregiverEvvEnrollmentController.submit);
