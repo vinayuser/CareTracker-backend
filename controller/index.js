@@ -6,6 +6,8 @@ module.exports = {
   AdminCaregiversController: require('./admin/AdminCaregiversController'),
   AdminSchedulesController: require('./admin/AdminSchedulesController'),
   AdminEvvController: require('./admin/AdminEvvController'),
+  AdminBillingClaimsController: require('./admin/AdminBillingClaimsController'),
+  AdminFinanceController: require('./admin/AdminFinanceController'),
   AdminTeamController: require('./admin/AdminTeamController'),
   SubscriptionPlanController: require('./admin/SubscriptionPlanController'),
   InvitationController: require('./admin/InvitationController'),

@@ -1,0 +1,534 @@
+{
+  "info": {
+    "name": "CareTracker - Client Portal",
+    "_postman_id": "c4e8a1b2-7d3f-4a91-9e2c-6f8b5d0a1c47",
+    "description": "APIs used by the Client panel (`/client/*`).\n\n**Setup**\n1. Set `baseUrl` (local: `http://localhost:3000/api`, prod: `https://caretraker.com/api/api`).\n2. Run **Auth → Login** with a client email/userId + password — token is saved automatically.\n3. Fill `carePlanId`, `caregiverId`, `enrollmentId` from list responses before calling detail/action endpoints.\n\nAll authenticated requests send `Authorization: Bearer {{token}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "clientId",
+      "value": ""
+    },
+    {
+      "key": "carePlanId",
+      "value": ""
+    },
+    {
+      "key": "caregiverId",
+      "value": ""
+    },
+    {
+      "key": "enrollmentId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json?.data?.token;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('token', token);",
+                  "    console.log('Saved client token');",
+                  "  }",
+                  "  const user = json?.data?.user;",
+                  "  if (user?.id || user?._id) {",
+                  "    pm.collectionVariables.set('clientId', String(user.id || user._id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@example.com\",\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Accepts email or login userId. Saves `token` (and `clientId` when present) on success. Use a **client** portal account."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Current client session profile."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Client\",\n  \"phone\": \"+1 555 0200\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password\",\n  \"newPassword\": \"newpassword1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "password"]
+            },
+            "description": "Rotates session jti — other devices are signed out after password change."
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "forgot-password"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"paste-reset-token-from-email\",\n  \"password\": \"newpassword1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "reset-password"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Client Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "dashboard"]
+            },
+            "description": "Client home KPIs, upcoming visits, caregivers summary, and alerts."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Visits / Schedule",
+      "item": [
+        {
+          "name": "List Visits (default next 14 days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/visits",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "visits"]
+            },
+            "description": "Without `from`/`to`/`date`, returns today through +14 days."
+          },
+          "response": []
+        },
+        {
+          "name": "List Visits (date range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/visits?from=2026-09-01&to=2026-09-30",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "visits"],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-01",
+                  "description": "YYYY-MM-DD"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-30",
+                  "description": "YYYY-MM-DD"
+                },
+                {
+                  "key": "status",
+                  "value": "All",
+                  "description": "Optional visit status filter",
+                  "disabled": true
+                },
+                {
+                  "key": "date",
+                  "value": "2026-09-23",
+                  "description": "Optional single date (YYYY-MM-DD)",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Caregivers",
+      "item": [
+        {
+          "name": "List Caregivers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const list = json?.data || [];",
+                  "  const first = Array.isArray(list) ? list[0] : (list?.list || [])[0];",
+                  "  if (first?.id || first?._id) {",
+                  "    pm.collectionVariables.set('caregiverId', String(first.id || first._id));",
+                  "    console.log('Saved caregiverId', pm.collectionVariables.get('caregiverId'));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/caregivers",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "caregivers"]
+            },
+            "description": "Caregivers assigned to this client. Saves first `caregiverId` automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Caregiver By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/caregivers/{{caregiverId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "caregivers", "{{caregiverId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Care Plans",
+      "item": [
+        {
+          "name": "List Care Plans",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const data = json?.data;",
+                  "  const list = Array.isArray(data) ? data : (data?.list || []);",
+                  "  const first = list[0];",
+                  "  if (first?.id || first?._id) {",
+                  "    pm.collectionVariables.set('carePlanId', String(first.id || first._id));",
+                  "    console.log('Saved carePlanId', pm.collectionVariables.get('carePlanId'));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/care-plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "care-plans"]
+            },
+            "description": "Saves first `carePlanId` automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Care Plan By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/care-plans/{{carePlanId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "care-plans", "{{carePlanId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sign Care Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"signature\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\",\n  \"name\": \"Jane Client\",\n  \"date\": \"2026-09-23\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/care-plans/{{carePlanId}}/sign",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "care-plans", "{{carePlanId}}", "sign"]
+            },
+            "description": "`signature` must be a `data:image/...` ink signature. Optional `name` and `date` (YYYY-MM-DD)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "EVV Enrollments",
+      "item": [
+        {
+          "name": "List EVV Enrollments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const data = json?.data;",
+                  "  const list = Array.isArray(data) ? data : (data?.list || []);",
+                  "  const first = list[0];",
+                  "  if (first?.id || first?._id) {",
+                  "    pm.collectionVariables.set('enrollmentId', String(first.id || first._id));",
+                  "    console.log('Saved enrollmentId', pm.collectionVariables.get('enrollmentId'));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/evv-enrollments",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "evv-enrollments"]
+            },
+            "description": "Saves first `enrollmentId` automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get EVV Enrollment By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/client/evv-enrollments/{{enrollmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "evv-enrollments", "{{enrollmentId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sign EVV Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"signature\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\",\n  \"date\": \"2026-09-23\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/evv-enrollments/{{enrollmentId}}/sign",
+              "host": ["{{baseUrl}}"],
+              "path": ["client", "evv-enrollments", "{{enrollmentId}}", "sign"]
+            },
+            "description": "Client authorization ink. `signature` must be `data:image/...`. Optional `date` (YYYY-MM-DD)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

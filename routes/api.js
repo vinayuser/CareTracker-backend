@@ -99,6 +99,14 @@ router.get('/admin/evv/stats', Auth.authenticate('super_admin'), Controller.Admi
 router.get('/admin/evv/employees', Auth.authenticate('super_admin'), Controller.AdminEvvController.getEmployees);
 router.get('/admin/evv/employees/:id', Auth.authenticate('super_admin'), Controller.AdminEvvController.getEmployeeDetail);
 
+router.get('/admin/billing-claims/stats', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getStats);
+router.get('/admin/billing-claims', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoices);
+router.get('/admin/billing-claims/:id', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoiceById);
+
+router.get('/admin/finance/stats', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getStats);
+router.get('/admin/finance', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getGroupedLines);
+router.get('/admin/finance/:id', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getInvoiceById);
+
 router.get('/admin/team/stats', Auth.authenticate('super_admin'), Controller.AdminTeamController.getStats);
 router.get('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.getAll);
 router.post('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.create);
