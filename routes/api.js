@@ -103,6 +103,10 @@ router.get('/admin/billing-claims/stats', Auth.authenticate('super_admin'), Cont
 router.get('/admin/billing-claims', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoices);
 router.get('/admin/billing-claims/:id', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoiceById);
 
+router.get('/admin/marketing/mailchimp', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpStatus);
+router.get('/admin/marketing/mailchimp/lists', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpLists);
+router.post('/admin/marketing/campaigns/send', Auth.authenticate('super_admin'), Controller.AdminMarketingController.sendCampaign);
+
 router.get('/admin/finance/stats', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getStats);
 router.get('/admin/finance', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getGroupedLines);
 router.get('/admin/finance/:id', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getInvoiceById);

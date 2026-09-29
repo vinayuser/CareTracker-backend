@@ -24,8 +24,8 @@ app.use(
 app.use(cookieParser());
 app.use(responses());
 app.use(morgan('dev'));
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/documents', express.static(path.join(__dirname, 'documents')));
 // Same assets under /api/* so nginx location /api/ can serve them without extra config
