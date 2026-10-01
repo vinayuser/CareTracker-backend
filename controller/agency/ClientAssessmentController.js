@@ -1,3 +1,4 @@
+const path = require('path');
 const Validation = require('../../validation/index');
 const constants = require('../../common/constants');
 const { ClientAssessmentService } = require('../../services');
@@ -32,6 +33,19 @@ module.exports.getById = async (req, res, next) => {
   try {
     const data = await ClientAssessmentService.getById(req, req.params.id);
     return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.uploadSignature = async (req, res, next) => {
+  try {
+    if (!req.file) return res.error(400, 'Signature file is required');
+    const uploadsRoot = path.join(__dirname, '../../uploads');
+    const rel = path.relative(uploadsRoot, req.file.path).split(path.sep).join('/');
+    return res.success(constants.MESSAGE.ASSESSMENT.SIGNATURE_UPLOADED, {
+      url: `/api/uploads/${rel}`,
+    });
   } catch (error) {
     next(error);
   }

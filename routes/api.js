@@ -205,6 +205,12 @@ router.get('/agency/assessments/options', Auth.authenticate('agency_owner', 'hr'
 router.get('/agency/assessments/stats', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getStats);
 router.get('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getAll);
 router.get('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.getById);
+router.post(
+  '/agency/assessments/signatures',
+  Auth.authenticate('agency_owner', 'hr'),
+  require('../middleware/assessmentSignatureUpload').uploadSignature,
+  Controller.ClientAssessmentController.uploadSignature,
+);
 router.post('/agency/assessments', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.create);
 router.put('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.update);
 router.delete('/agency/assessments/:id', Auth.authenticate('agency_owner', 'hr'), Controller.ClientAssessmentController.remove);

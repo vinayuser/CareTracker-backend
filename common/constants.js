@@ -191,6 +191,7 @@ module.exports = {
       DELETED: 'Client assessment deleted successfully',
       NOT_FOUND: 'Client assessment not found',
       ALREADY_ACCEPTED: 'This assessment has already been accepted',
+      SIGNATURE_UPLOADED: 'Signature uploaded successfully',
     },
     INSURANCE_INTAKE: {
       CREATED: 'Insurance intake saved successfully',
