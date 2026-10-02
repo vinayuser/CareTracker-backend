@@ -107,6 +107,15 @@ router.get('/admin/marketing/mailchimp', Auth.authenticate('super_admin'), Contr
 router.get('/admin/marketing/mailchimp/lists', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpLists);
 router.post('/admin/marketing/campaigns/send', Auth.authenticate('super_admin'), Controller.AdminMarketingController.sendCampaign);
 
+router.get('/admin/reports/evv-summary/options', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOptions);
+router.get('/admin/reports/evv-summary/export', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.exportCsv);
+router.get('/admin/reports/evv-summary', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getList);
+
+router.get('/admin/time-cards/options', Auth.authenticate('super_admin'), Controller.AdminTimeCardController.getOptions);
+router.get('/admin/time-cards/export', Auth.authenticate('super_admin'), Controller.AdminTimeCardController.exportCsv);
+router.get('/admin/time-cards', Auth.authenticate('super_admin'), Controller.AdminTimeCardController.getList);
+router.get('/admin/time-cards/:id', Auth.authenticate('super_admin'), Controller.AdminTimeCardController.getDetail);
+
 router.get('/admin/finance/stats', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getStats);
 router.get('/admin/finance', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getGroupedLines);
 router.get('/admin/finance/:id', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getInvoiceById);

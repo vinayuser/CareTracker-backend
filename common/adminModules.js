@@ -35,6 +35,7 @@ const MODULE_GROUPS = [
   {
     title: 'Platform',
     keys: [
+      'ADMIN_TIME_CARD',
       'ADMIN_REPORTS',
       'ADMIN_AUDIT_LOGS',
       'ADMIN_INTEGRATIONS',
@@ -64,6 +65,7 @@ const MODULE_LABELS = {
   ADMIN_MARKETING: 'Marketing',
   ADMIN_REFERRALS: 'Referrals',
   ADMIN_CRM: 'CRM',
+  ADMIN_TIME_CARD: 'Time Card',
   ADMIN_REPORTS: 'Reports',
   ADMIN_AUDIT_LOGS: 'Audit Logs',
   ADMIN_INTEGRATIONS: 'Integrations',
