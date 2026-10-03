@@ -9,6 +9,8 @@ const InvitationSchema = new mongoose.Schema(
     subscriptionPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubscriptionPlan', required: true },
     planName: { type: String, default: '' },
     planPrice: { type: Number, default: 0 },
+    /** Set when the invite is accepted and an agency is created — used for hard-delete cascade. */
+    agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Agency', default: null, index: true },
     status: {
       type: String,
       enum: ['Pending', 'Accepted', 'Expired'],

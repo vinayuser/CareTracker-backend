@@ -177,9 +177,9 @@ const submitRegistration = async (req, payload) => {
     usage: { clients: 0, caregivers: 0, users: 1, branches: 1 },
   });
 
-  // One-time invite: invalidate immediately after agency is created
+  // One-time invite: invalidate immediately after agency is created and link agencyId for purge
   if (payload.invitationToken) {
-    await InvitationService.markAccepted(payload.invitationToken);
+    await InvitationService.markAccepted(payload.invitationToken, agency._id);
   }
 
   if (payload.userId && payload.password) {

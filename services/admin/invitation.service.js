@@ -129,16 +129,24 @@ const validateToken = async (token) => {
   };
 };
 
-/** Atomically mark a pending invite Accepted (one-time use). */
-const markAccepted = async (token) => {
+/** Atomically mark a pending invite Accepted (one-time use) and link the created agency. */
+const markAccepted = async (token, agencyId = null) => {
+  const $set = { status: 'Accepted' };
+  if (agencyId) $set.agencyId = agencyId;
+
   const invitation = await Model.InvitationModel.findOneAndUpdate(
     { token, status: 'Pending' },
-    { $set: { status: 'Accepted' } },
+    { $set },
     { new: true },
   );
   if (!invitation) {
     const existing = await Model.InvitationModel.findOne({ token });
     if (!existing) return null;
+    // Backfill agency link if accept already raced ahead
+    if (agencyId && !existing.agencyId) {
+      existing.agencyId = agencyId;
+      await existing.save();
+    }
     return formatInvitation(existing);
   }
   return formatInvitation(invitation);
