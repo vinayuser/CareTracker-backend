@@ -34,6 +34,7 @@ module.exports = {
   EvvSettingsController: require('./agency/EvvSettingsController'),
   AgencySettingsController: require('./agency/AgencySettingsController'),
   ClientInvoiceController: require('./agency/ClientInvoiceController'),
+  AgencyReportsController: require('./agency/AgencyReportsController'),
   HolidayController: require('./agency/HolidayController'),
   LeaveController: require('./agency/LeaveController'),
   CaregiverController: require('./caregiver/CaregiverController'),

@@ -300,6 +300,14 @@ router.post('/agency/invoices/:id/send', Auth.authenticate('agency_owner', 'hr')
 router.post('/agency/invoices/:id/paid', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.markPaid);
 router.post('/agency/invoices/:id/void', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.void);
 
+router.get('/agency/reports/evv-summary/options', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getEvvSummaryOptions);
+router.get('/agency/reports/evv-summary/export', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportEvvSummary);
+router.get('/agency/reports/evv-summary', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getEvvSummary);
+router.get('/agency/time-cards/options', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getTimeCardOptions);
+router.get('/agency/time-cards/export', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportTimeCards);
+router.get('/agency/time-cards', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getTimeCards);
+router.get('/agency/time-cards/:id', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getTimeCardDetail);
+
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
 router.get('/agency/job-applications/job/:jobId/rejected', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getRejectedByJob);

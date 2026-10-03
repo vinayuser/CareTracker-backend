@@ -33,6 +33,10 @@ const MODULE_GROUPS = [
     keys: ['AGENCY_BILLING'],
   },
   {
+    title: 'Reports',
+    keys: ['AGENCY_REPORTS', 'AGENCY_TIME_CARD'],
+  },
+  {
     title: 'Caregivers',
     keys: ['AGENCY_CAREGIVERS', 'AGENCY_HOLIDAYS', 'AGENCY_LEAVE_POLICY', 'AGENCY_LEAVE_REQUESTS'],
   },
@@ -57,6 +61,8 @@ const MODULE_LABELS = {
   AGENCY_EVV_ENROLLMENTS: 'Enrollments',
   AGENCY_EVV_SETTINGS: 'EVV Settings',
   AGENCY_BILLING: 'Invoices',
+  AGENCY_REPORTS: 'EVV Summary Report',
+  AGENCY_TIME_CARD: 'Time Card',
   AGENCY_CAREGIVERS: 'Caregivers',
   AGENCY_HOLIDAYS: 'Holiday Master',
   AGENCY_LEAVE_POLICY: 'Leave Policy',
@@ -70,6 +76,9 @@ const HR_ASSIGNABLE_MODULES = [...new Set(MODULE_GROUPS.flatMap((group) => group
 
 const DEFAULT_HR_MODULES = [
   'AGENCY_DASHBOARD',
+  'AGENCY_BILLING',
+  'AGENCY_REPORTS',
+  'AGENCY_TIME_CARD',
   'AGENCY_CAREGIVERS',
   'AGENCY_HOLIDAYS',
   'AGENCY_LEAVE_POLICY',
