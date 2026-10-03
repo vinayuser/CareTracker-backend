@@ -102,11 +102,8 @@ const resend = async (req, id) => {
 const remove = async (id) => {
   const invitation = await Model.InvitationModel.findById(id);
   if (!invitation) throw new Error(constants.MESSAGE.INVITATION.NOT_FOUND);
-  if (invitation.status === 'Accepted') {
-    throw new Error(constants.MESSAGE.INVITATION.CANNOT_DELETE_ACCEPTED);
-  }
   await invitation.deleteOne();
-  return { id: String(id) };
+  return { id: String(id), status: invitation.status };
 };
 
 const validateToken = async (token) => {
