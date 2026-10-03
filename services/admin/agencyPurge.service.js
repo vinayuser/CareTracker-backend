@@ -85,6 +85,20 @@ const purgeAgencyRelatedData = async (agencyId) => {
     .lean();
   if (!agency) throw new Error('Agency Not Found');
 
+  const idStr = String(id);
+  const agencyEmail = String(agency.email || '').trim().toLowerCase();
+  const agencyName = String(agency.name || '').trim();
+
+  // Include owner accounts linked only by email (legacy rows with missing agencyId)
+  const accountLookup = {
+    $or: [
+      ...filter.$or,
+      ...(agencyEmail
+        ? [{ email: agencyEmail }, { userId: agencyEmail }]
+        : []),
+    ],
+  };
+
   // Collect upload paths before wiping documents
   const [
     documents,
@@ -98,13 +112,32 @@ const purgeAgencyRelatedData = async (agencyId) => {
   ] = await Promise.all([
     Model.AgencyDocumentModel.find(filter).select('filePath').lean(),
     Model.CandidateFormSubmissionModel.find(filter).select('filledPdfPath').lean(),
-    Model.AgencyAccountModel.find(filter).select('profilePicPath invitationId email userId role').lean(),
+    Model.AgencyAccountModel.find(accountLookup).select('profilePicPath invitationId email userId role').lean(),
     Model.ClientModel.find(filter).select('profilePicPath').lean(),
     Model.CandidateModel.find(filter).select('resumePath profilePicPath').lean(),
     Model.ClientInvoiceModel.find(filter).select('pdfPath').lean(),
     Model.ClientAssessmentModel.find(filter).select('assessorPhoto').lean(),
     Model.ClientInsuranceIntakeModel.find(filter).select('formData.requiredDocuments').lean(),
   ]);
+
+  const ownerAccounts = (accounts || []).filter((row) => row.role === 'AGENCY_OWNER');
+  const ownerEmails = [...new Set(
+    [
+      agencyEmail,
+      ...ownerAccounts.flatMap((row) => [row.email, row.userId]),
+      ...accounts.flatMap((row) => (row.role === 'AGENCY_OWNER' ? [row.email, row.userId] : [])),
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean),
+  )];
+
+  // Delete login accounts by agencyId OR owner/agency email (prevents re-invite blocks)
+  const accountDeleteFilter = {
+    $or: [
+      ...filter.$or,
+      ...ownerEmails.flatMap((email) => [{ email }, { userId: email }]),
+    ],
+  };
 
   const uploadPaths = [
     agency.logoPath,
@@ -120,8 +153,13 @@ const purgeAgencyRelatedData = async (agencyId) => {
 
   // --- Cascade targets: every model keyed by agencyId ---
   const ops = [
-    ['AgencyAccount', Model.AgencyAccountModel],
-    ['HrStaff', Model.HrStaffModel],
+    ['AgencyAccount', Model.AgencyAccountModel, accountDeleteFilter],
+    ['HrStaff', Model.HrStaffModel, {
+      $or: [
+        ...filter.$or,
+        ...(ownerEmails.length ? [{ email: { $in: ownerEmails } }] : []),
+      ],
+    }],
     ['AgencyStage', Model.AgencyStageModel],
     ['JobPost', Model.JobPostModel],
     ['Candidate', Model.CandidateModel],
@@ -150,20 +188,13 @@ const purgeAgencyRelatedData = async (agencyId) => {
     ['LeaveRequest', Model.LeaveRequestModel],
   ];
 
-  for (const [name, model] of ops) {
+  for (const [name, model, customFilter] of ops) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await model.deleteMany(filter);
+    const result = await model.deleteMany(customFilter || filter);
     deleted[name] = result?.deletedCount || 0;
   }
 
-  // Remove invitations for this agency.
-  // Primary match: invite.email === agency / owner email (same email used to create the agency).
-  // Also match agencyId / account.invitationId / agency name for older/edge rows.
-  const idStr = String(id);
-  const agencyEmail = String(agency.email || '').trim().toLowerCase();
-  const agencyName = String(agency.name || '').trim();
-  const ownerAccounts = (accounts || []).filter((row) => row.role === 'AGENCY_OWNER');
-
+  // Remove invitations for this agency (email / agencyId / invitationId / name)
   const invitationIds = [...new Set(
     [...ownerAccounts, ...accounts]
       .map((row) => row.invitationId)
@@ -172,16 +203,6 @@ const purgeAgencyRelatedData = async (agencyId) => {
   )]
     .map((value) => toOid(value))
     .filter(Boolean);
-
-  // Same email on invite and agency owner — this finds existing Accepted invites without agencyId
-  const ownerEmails = [...new Set(
-    [
-      agencyEmail,
-      ...ownerAccounts.flatMap((row) => [row.email, row.userId]),
-    ]
-      .map((value) => String(value || '').trim().toLowerCase())
-      .filter(Boolean),
-  )];
 
   const inviteClauses = [];
   if (ownerEmails.length) {
