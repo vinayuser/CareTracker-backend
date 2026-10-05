@@ -99,13 +99,36 @@ const sendViaMailchimp = async ({ to, subject, html, text }) => {
   });
   return {
     sent: true,
+    queued: false,
     devMode: false,
     provider: 'mailchimp',
     campaignId: result.campaignId,
   };
 };
 
-const sendMail = async ({ to, subject, html, text }) => {
+const deliverMail = async ({ to, subject, html, text }) => {
+  const activeMailer = mailer();
+
+  if (activeMailer !== 'smtp') {
+    const result = await sendViaMailchimp({ to, subject, html, text });
+    console.log(`[mail] sent via mailchimp to=${to} subject="${subject}" campaignId=${result.campaignId || ''}`);
+    return result;
+  }
+
+  const from = process.env.MAIL_FROM
+    || process.env.MAIL_FROM_ADDRESS
+    || process.env.SMTP_USER
+    || 'noreply@caretraker.com';
+  console.warn('[mail] using legacy SMTP mailer');
+  return sendViaSmtp({ to, subject, html, text, from });
+};
+
+/**
+ * Queue outbound email and return immediately so API/form saves are not blocked
+ * by Mailchimp/SMTP latency. Pass `{ wait: true }` only when the caller must
+ * know the delivery outcome before responding.
+ */
+const sendMail = async ({ to, subject, html, text, wait = false }) => {
   const activeMailer = mailer();
 
   if (!isConfigured()) {
@@ -115,27 +138,25 @@ const sendMail = async ({ to, subject, html, text }) => {
     console.log(`Subject: ${subject}`);
     console.log(text || html);
     console.log('---\n');
-    return { sent: false, devMode: true };
+    return { sent: false, queued: false, devMode: true };
   }
 
-  // Default: Mailchimp only. SMTP is opt-in via MAIL_MAILER=smtp (legacy).
-  if (activeMailer !== 'smtp') {
-    try {
-      const result = await sendViaMailchimp({ to, subject, html, text });
-      console.log(`[mail] sent via mailchimp to=${to} subject="${subject}" campaignId=${result.campaignId || ''}`);
-      return result;
-    } catch (err) {
-      console.error('[mail] Mailchimp send failed', err.message);
-      throw err;
-    }
+  if (wait) {
+    return deliverMail({ to, subject, html, text });
   }
 
-  const from = process.env.MAIL_FROM
-    || process.env.MAIL_FROM_ADDRESS
-    || process.env.SMTP_USER
-    || 'noreply@caretraker.com';
-  console.warn('[mail] using legacy SMTP mailer');
-  return sendViaSmtp({ to, subject, html, text, from });
+  setImmediate(() => {
+    deliverMail({ to, subject, html, text }).catch((err) => {
+      console.error(`[mail] background send failed to=${to} subject="${subject}"`, err.message);
+    });
+  });
+
+  return {
+    sent: true,
+    queued: true,
+    provider: activeMailer === 'smtp' ? 'smtp' : 'mailchimp',
+    devMode: false,
+  };
 };
 
 /** When a candidate is added to a job */
