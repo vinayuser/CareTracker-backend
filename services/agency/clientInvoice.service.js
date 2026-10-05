@@ -2,6 +2,7 @@ const Model = require('../../models/index');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { sendCandidateCustomEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 const getAgencyId = (req) => {
@@ -309,6 +310,38 @@ const sendInvoice = async (req, id) => {
   invoice.status = 'Sent';
   invoice.sentAt = new Date();
   await invoice.save();
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.INVOICE_SENT,
+      category: 'billing',
+      title: 'Invoice sent',
+      body: `Invoice ${invoice.invoiceCode} sent to ${invoice.clientName || invoice.clientEmail}.`,
+      tone: 'success',
+      actionUrl: '/agency/billing',
+      entityType: 'ClientInvoice',
+      entityId: invoice._id,
+      metadata: { invoiceCode: invoice.invoiceCode, total: invoice.total },
+    }, { moduleKey: 'AGENCY_BILLING' });
+
+    const clientAccount = invoice.clientId
+      ? await Model.AgencyAccountModel.findOne({ agencyId, clientId: invoice.clientId, role: 'CLIENT' }).select('_id')
+      : null;
+    if (clientAccount) {
+      await NotificationService.notifyAccount(clientAccount._id, {
+        type: NotificationService.TYPES.INVOICE_RECEIVED,
+        category: 'billing',
+        title: 'New invoice available',
+        body: `Invoice ${invoice.invoiceCode} for $${Number(invoice.total).toFixed(2)} is ready to view.`,
+        tone: 'info',
+        actionUrl: '/client/invoices',
+        entityType: 'ClientInvoice',
+        entityId: invoice._id,
+        metadata: { invoiceCode: invoice.invoiceCode, total: invoice.total },
+      });
+    }
+  });
+
   return formatInvoice(invoice);
 };
 

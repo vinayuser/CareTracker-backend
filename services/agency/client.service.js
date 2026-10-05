@@ -7,6 +7,7 @@ const { DOC_KEYS } = require('../../middleware/insuranceIntakeUpload');
 const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 const { sendClientWelcomeEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 
 const CLIENT_PAYLOAD_FIELDS = [
   'intakeDate', 'intakeId',
@@ -370,6 +371,30 @@ const setPassword = async (req, id, password) => {
     agencyName: agency?.name || '',
     email,
     password,
+  });
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(account._id, {
+      type: NotificationService.TYPES.CLIENT_PORTAL_READY,
+      category: 'system',
+      title: 'Client portal ready',
+      body: `Your portal account for ${agency?.name || 'your agency'} is active. Check your email for login details.`,
+      tone: 'success',
+      actionUrl: '/client/dashboard',
+      entityType: 'Client',
+      entityId: client._id,
+    });
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.CLIENT_PORTAL_READY,
+      category: 'system',
+      title: 'Client portal activated',
+      body: `Portal access created for ${fullName}.`,
+      tone: 'success',
+      actionUrl: `/agency/clients/${client._id}/edit`,
+      entityType: 'Client',
+      entityId: client._id,
+      metadata: { clientName: fullName },
+    }, { moduleKey: 'AGENCY_CLIENTS' });
   });
 
   return formatClient(client, req);

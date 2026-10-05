@@ -5,6 +5,7 @@ const { buildUploadUrl } = require('../../common/candidateHelpers');
 const { ARCHIVED_STATUS, notArchivedFilter } = require('../../common/agencyVisibility');
 const { purgeAgencyRelatedData } = require('./agencyPurge.service');
 const { sendAgencyOwnerCredentialsEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 const { assertLoginIdentifiersAvailable } = require('../../common/emailAvailability');
 const fs = require('fs/promises');
 const path = require('path');
@@ -446,6 +447,29 @@ const resetPassword = async (id) => {
     email: account.userId || loginEmail,
     password,
     reset: true,
+  });
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(account._id, {
+      type: NotificationService.TYPES.AGENCY_CREDENTIALS_RESET,
+      category: 'system',
+      title: 'Login credentials updated',
+      body: `Your agency owner password for ${agency.name || 'your agency'} was reset. Check your email for the new credentials.`,
+      tone: 'warning',
+      actionUrl: '/agency/dashboard',
+      entityType: 'Agency',
+      entityId: agency._id,
+    });
+    await NotificationService.notifyPlatformAdmins({
+      type: NotificationService.TYPES.AGENCY_CREDENTIALS_RESET,
+      category: 'system',
+      title: `Agency credentials reset — ${agency.name || 'Agency'}`,
+      body: `Owner login credentials were reset for ${agency.name || 'agency'}.`,
+      tone: 'info',
+      actionUrl: '/admin/agencies',
+      entityType: 'Agency',
+      entityId: agency._id,
+    });
   });
 
   return {

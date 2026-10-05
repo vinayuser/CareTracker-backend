@@ -22,6 +22,39 @@ const {
 const DEFAULT_HORIZON_DAYS = 42;
 const LATE_EXTRA_MS = LATE_CHECK_IN_EXTRA_MINUTES * 60 * 1000;
 const { getBlockingHolidayMap, leaveFieldsForDate } = require('./holidayLeaveVisits.service');
+const NotificationService = require('../common/notification.service');
+
+const emitScheduleCreatedNotification = ({
+  agencyId,
+  clientName,
+  caregiverName,
+  generatedVisits,
+  scheduleId,
+  scheduleCode,
+}) => {
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const agencyName = agency?.name || 'Agency';
+    const payload = {
+      type: NotificationService.TYPES.SCHEDULE_CREATED,
+      category: 'schedule',
+      title: 'Visit schedule created',
+      body: `${generatedVisits} visit(s) scheduled for ${clientName} with ${caregiverName}.`,
+      tone: 'success',
+      actionUrl: '/agency/schedule',
+      entityType: 'VisitSchedule',
+      entityId: scheduleId,
+      metadata: { scheduleCode, clientName, caregiverName, visitCount: generatedVisits },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_SCHEDULE' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Schedule created — ${agencyName}`,
+      body: `${agencyName}: ${generatedVisits} visit(s) for ${clientName}.`,
+      actionUrl: '/admin/schedules',
+    });
+  });
+};
 
 const resolveLateCheckInUntil = (visit) => {
   if (visit.lateCheckInUntil) return new Date(visit.lateCheckInUntil);
@@ -736,12 +769,21 @@ const createSchedule = async (req, payload) => {
         schedules.push(formatSchedule(schedule));
         generatedVisits += generated.created;
       }
-      return {
+      const fallbackResult = {
         schedule: schedules[0] || null,
         schedules,
         created_count: schedules.length,
         generated_visits: generatedVisits,
       };
+      emitScheduleCreatedNotification({
+        agencyId,
+        clientName,
+        caregiverName,
+        generatedVisits,
+        scheduleId: schedules[0]?.id || schedules[0]?._id,
+        scheduleCode: schedules[0]?.scheduleCode,
+      });
+      return fallbackResult;
     }
     throw err;
   }
@@ -777,12 +819,23 @@ const createSchedule = async (req, payload) => {
   }
 
   const schedules = createdSchedules.map((s) => formatSchedule(s));
-  return {
+  const result = {
     schedule: schedules[0] || null,
     schedules,
     created_count: schedules.length,
     generated_visits: generatedVisits,
   };
+
+  emitScheduleCreatedNotification({
+    agencyId,
+    clientName,
+    caregiverName,
+    generatedVisits,
+    scheduleId: createdSchedules[0]?._id,
+    scheduleCode: schedules[0]?.scheduleCode,
+  });
+
+  return result;
 };
 
 
@@ -1527,6 +1580,30 @@ const checkOutVisit = async (req, visitId, payload = {}) => {
   visit.rejectionReason = '';
   visit.approvalNotes = '';
   await visit.save();
+
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const agencyName = agency?.name || 'Agency';
+    const payload = {
+      type: NotificationService.TYPES.EVV_VISIT_CHECKOUT,
+      category: 'compliance',
+      title: 'Visit checkout pending approval',
+      body: `${visit.caregiverName || 'Caregiver'} checked out visit ${visit.visitCode || ''} for ${visit.clientName || 'client'}.`,
+      tone: 'warning',
+      actionUrl: '/agency/evv/logs',
+      entityType: 'Visit',
+      entityId: visit._id,
+      metadata: { visitCode: visit.visitCode, clientName: visit.clientName },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_EVV_LOGS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Visit checkout — ${agencyName}`,
+      body: `${agencyName}: ${visit.caregiverName} checked out ${visit.visitCode} for ${visit.clientName}.`,
+      actionUrl: '/admin/evv-compliance',
+    });
+  });
+
   return formatVisit(visit, { now });
 };
 
@@ -1626,6 +1703,21 @@ const approveVisit = async (req, visitId, payload = {}) => {
     ];
   }
   await visit.save();
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(visit.caregiverAccountId, {
+      type: NotificationService.TYPES.EVV_VISIT_APPROVED,
+      category: 'compliance',
+      title: 'Visit approved',
+      body: `Your visit ${visit.visitCode || ''} for ${visit.clientName || 'client'} was approved.`,
+      tone: 'success',
+      actionUrl: '/caregiver/visits',
+      entityType: 'Visit',
+      entityId: visit._id,
+      metadata: { visitCode: visit.visitCode },
+    });
+  });
+
   return formatVisit(visit);
 };
 
@@ -1652,6 +1744,21 @@ const rejectVisit = async (req, visitId, payload = {}) => {
     },
   ];
   await visit.save();
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(visit.caregiverAccountId, {
+      type: NotificationService.TYPES.EVV_VISIT_REJECTED,
+      category: 'compliance',
+      title: 'Visit rejected',
+      body: `Your visit ${visit.visitCode || ''} for ${visit.clientName || 'client'} was rejected.${visit.rejectionReason ? ` Reason: ${visit.rejectionReason}` : ''}`,
+      tone: 'danger',
+      actionUrl: '/caregiver/visits',
+      entityType: 'Visit',
+      entityId: visit._id,
+      metadata: { visitCode: visit.visitCode, reason: visit.rejectionReason },
+    });
+  });
+
   return formatVisit(visit);
 };
 

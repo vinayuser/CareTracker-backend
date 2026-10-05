@@ -16,6 +16,7 @@ const {
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
 const { allocateNextCode, isDuplicateKeyError } = require('../../common/agencyCodeSequence');
+const NotificationService = require('../common/notification.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -200,6 +201,29 @@ const notifyQuoteGenerated = async (req, assessment, plan) => {
   } catch (err) {
     console.error('[assessment] quote notify failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    const agencyId = getAgencyId(req);
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const agencyName = agency?.name || 'Agency';
+    const payload = {
+      type: NotificationService.TYPES.ASSESSMENT_QUOTE_GENERATED,
+      category: 'clinical',
+      title: 'Care plan quote generated',
+      body: `Quote ${plan.planCode} generated for ${assessment.clientName || 'client'} (${assessment.assessmentCode}).`,
+      tone: 'info',
+      actionUrl: `/agency/care-plans/${plan._id}`,
+      entityType: 'CarePlan',
+      entityId: plan._id,
+      metadata: { assessmentCode: assessment.assessmentCode, planCode: plan.planCode },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_CARE_PLANS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Quote generated — ${agencyName}`,
+      actionUrl: '/admin/clients',
+    });
+  });
 };
 
 const generateAssessmentCode = async (agencyId) => allocateNextCode({
@@ -513,6 +537,27 @@ const create = async (req, payload) => {
     console.error('[assessment] create notify failed', err.message);
   }
 
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const payload = {
+      type: NotificationService.TYPES.ASSESSMENT_CREATED,
+      category: 'clinical',
+      title: 'Assessment created',
+      body: `Assessment ${doc.assessmentCode} created for ${summary.clientName || doc.clientName || 'client'}.`,
+      tone: 'info',
+      actionUrl: `/agency/assessments/${doc._id}/edit`,
+      entityType: 'ClientAssessment',
+      entityId: doc._id,
+      metadata: { assessmentCode: doc.assessmentCode, clientName: summary.clientName || doc.clientName },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_ASSESSMENTS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Assessment created — ${agency?.name || 'Agency'}`,
+      actionUrl: '/admin/clients',
+    });
+  });
+
   return formatAssessment(doc, req);
 };
 
@@ -735,6 +780,27 @@ const acceptQuote = async (req, id) => {
   } catch (err) {
     console.error('[assessment] accept notify failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const payload = {
+      type: NotificationService.TYPES.ASSESSMENT_QUOTE_ACCEPTED,
+      category: 'clinical',
+      title: 'Assessment quote accepted',
+      body: `${assessment.clientName || client.firstName} accepted quote for ${plan.planCode}.`,
+      tone: 'success',
+      actionUrl: `/agency/care-plans/${plan._id}`,
+      entityType: 'CarePlan',
+      entityId: plan._id,
+      metadata: { assessmentCode: assessment.assessmentCode, planCode: plan.planCode },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_CARE_PLANS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Quote accepted — ${agency?.name || 'Agency'}`,
+      actionUrl: '/admin/clients',
+    });
+  });
 
   return {
     assessment: formatAssessment(assessment, req),

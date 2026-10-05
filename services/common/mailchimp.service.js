@@ -157,8 +157,61 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients }) =>
   };
 };
 
+/**
+ * Send a single transactional-style message via Mailchimp Marketing campaigns.
+ * Uses the same campaign pipeline as admin marketing, scoped to one recipient.
+ */
+const sendTransactional = async ({
+  to,
+  subject,
+  html,
+  text,
+  fromName,
+  replyTo,
+  recipientName,
+}) => {
+  const email = String(to || '').trim();
+  if (!email) throw new Error('Recipient email is required');
+
+  const resolvedFromName = fromName
+    || process.env.MAILCHIMP_FROM_NAME
+    || process.env.MAIL_FROM_NAME
+    || 'CareTracker';
+  const resolvedReplyTo = replyTo
+    || process.env.MAILCHIMP_FROM_EMAIL
+    || process.env.MAIL_FROM_ADDRESS
+    || process.env.MAIL_FROM;
+  if (!resolvedReplyTo) {
+    throw new Error('Mailchimp from email is not configured (MAILCHIMP_FROM_EMAIL)');
+  }
+
+  const bodyHtml = html || `<pre style="font-family:inherit;white-space:pre-wrap;">${String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')}</pre>`;
+
+  return sendCampaign({
+    subject,
+    html: bodyHtml,
+    fromName: resolvedFromName,
+    replyTo: resolvedReplyTo,
+    recipients: [{ email, name: recipientName || email }],
+  });
+};
+
+const isConfigured = () => {
+  try {
+    getConfig();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 module.exports = {
   getStatus,
   getLists,
   sendCampaign,
+  sendTransactional,
+  isConfigured,
 };

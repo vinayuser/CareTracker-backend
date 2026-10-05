@@ -13,6 +13,7 @@ const {
   sendCandidateCustomEmail,
 } = require('../common/mail.service');
 const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
+const NotificationService = require('../common/notification.service');
 
 const formatApplicationPopulated = (app) => {
   if (!app) return null;
@@ -230,11 +231,35 @@ const applyForJob = async (req, payload) => {
     console.error('[applyForJob] application email failed', err.message);
   }
 
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const agencyName = agency?.name || 'Agency';
+    const candidateName = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || 'Candidate';
+    const payload = {
+      type: NotificationService.TYPES.HIRING_APPLICATION_RECEIVED,
+      category: 'hiring',
+      title: 'New job application',
+      body: `${candidateName} applied for ${job.jobTitle}.`,
+      tone: 'info',
+      actionUrl: '/agency/hr/hiring-pipeline',
+      entityType: 'CandidateApplication',
+      entityId: application._id,
+      metadata: { candidateName, jobTitle: job.jobTitle },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `New application — ${agencyName}`,
+      body: `${agencyName}: ${candidateName} applied for ${job.jobTitle}.`,
+      actionUrl: '/admin/users',
+    });
+  });
+
   try {
     const formAccess = await CandidateFormService.issueStageAccess(
       req,
       application._id,
-      { documentCodes: parseDocumentCodes(payload) },
+      { documentCodes: parseDocumentCodes(payload), skipNotify: true },
     );
     if (!formAccess.skipped) {
       formatted.form_url = formAccess.form_url;
@@ -443,6 +468,36 @@ const transferHiredApplicationToCaregiver = async (req, app, job) => {
     console.error('[transferHiredApplicationToCaregiver] welcome email failed', err.message);
   }
 
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const caregiverName = caregiverAccount.fullName
+      || `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim()
+      || 'Caregiver';
+    const payload = {
+      type: NotificationService.TYPES.CAREGIVER_HIRED,
+      category: 'hiring',
+      title: 'Caregiver hired',
+      body: `${caregiverName} was hired for ${job.jobTitle} and added to the caregiver roster.`,
+      tone: 'success',
+      actionUrl: '/agency/caregivers',
+      entityType: 'CandidateApplication',
+      entityId: app._id,
+      metadata: { caregiverName, jobTitle: job.jobTitle },
+    };
+    await NotificationService.notifyAccount(caregiverAccount._id, {
+      ...payload,
+      title: 'Welcome to the team',
+      body: `You were hired for ${job.jobTitle}. Check your email for portal login details.`,
+      actionUrl: '/caregiver/dashboard',
+    });
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_CAREGIVERS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Caregiver hired — ${agency?.name || 'Agency'}`,
+      actionUrl: '/admin/caregivers',
+    });
+  });
+
   return formatCaregiverAccount(caregiverAccount, {
     tempPassword,
     jobTitle: job.jobTitle,
@@ -560,6 +615,38 @@ const moveToNextStage = async (req, applicationId, options = {}) => {
   } catch (err) {
     console.error('[moveToNextStage] congrats email failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    const [agency, candidateDoc] = await Promise.all([
+      Model.AgencyModel.findById(agencyId).select('name').lean(),
+      Model.CandidateModel.findById(app.candidateId).select('firstName lastName'),
+    ]);
+    const candidateName = candidateDoc
+      ? `${candidateDoc.firstName || ''} ${candidateDoc.lastName || ''}`.trim() || 'Candidate'
+      : 'Candidate';
+    const payload = {
+      type: NotificationService.TYPES.HIRING_STAGE_ADVANCED,
+      category: 'hiring',
+      title: 'Candidate advanced to next stage',
+      body: `${candidateName} moved from ${completedStage?.name || 'stage'} to ${nextStage?.name || 'next stage'} for ${job?.jobTitle || 'position'}.`,
+      tone: 'info',
+      actionUrl: '/agency/hr/hiring-pipeline',
+      entityType: 'CandidateApplication',
+      entityId: app._id,
+      metadata: {
+        candidateName,
+        completedStage: completedStage?.name,
+        nextStage: nextStage?.name,
+        jobTitle: job?.jobTitle,
+      },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Hiring stage update — ${agency?.name || 'Agency'}`,
+      actionUrl: '/admin/users',
+    });
+  });
 
   const populated = await Model.CandidateApplicationModel.findById(app._id)
     .populate('candidateId')
@@ -900,6 +987,20 @@ const sendEmail = async (req, applicationId, payload) => {
     subject: payload.subject,
     message: payload.message,
     senderName: sender?.fullName || sender?.name || '',
+  });
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.MESSAGE_RECEIVED,
+      category: 'message',
+      title: 'Candidate email sent',
+      body: `Email "${payload.subject || 'Message'}" sent to ${`${candidate.firstName || ''} ${candidate.lastName || ''}`.trim()}.`,
+      tone: 'info',
+      actionUrl: '/agency/hr/hiring-pipeline',
+      entityType: 'CandidateApplication',
+      entityId: app._id,
+      metadata: { subject: payload.subject, candidateEmail: candidate.email },
+    }, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
   });
 
   return {

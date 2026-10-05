@@ -1,12 +1,22 @@
 const { getFrontendUrl } = require('../../common/functions');
+const MailchimpService = require('./mailchimp.service');
 
 const PRIMARY = '#0055d4';
 const SIDEBAR = '#001529';
 const PAGE_BG = '#f5f7fa';
 
-const isConfigured = () => Boolean(
+const mailer = () => String(process.env.MAIL_MAILER || 'mailchimp').trim().toLowerCase();
+
+const isMailchimpConfigured = () => MailchimpService.isConfigured();
+
+const isSmtpConfigured = () => Boolean(
   process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS,
 );
+
+const isConfigured = () => {
+  if (mailer() === 'smtp') return isSmtpConfigured();
+  return isMailchimpConfigured();
+};
 
 const escapeHtml = (value) =>
   String(value ?? '')
@@ -56,28 +66,14 @@ const ctaButton = (href, label) => `
     </a>
   </p>`.trim();
 
-const sendMail = async ({ to, subject, html, text }) => {
-  const from = process.env.MAIL_FROM
-    || process.env.MAIL_FROM_ADDRESS
-    || process.env.SMTP_USER
-    || 'noreply@caretraker.com';
-
-  if (!isConfigured()) {
-    console.log('\n--- [mail:dev] ---');
-    console.log(`To: ${to}`);
-    console.log(`Subject: ${subject}`);
-    console.log(text || html);
-    console.log('---\n');
-    return { sent: false, devMode: true };
-  }
-
+const sendViaSmtp = async ({ to, subject, html, text, from }) => {
   let nodemailer;
   try {
     nodemailer = require('nodemailer');
   } catch {
     console.warn('[mail] nodemailer not installed; logging email instead');
     console.log(text || html);
-    return { sent: false, devMode: true };
+    return { sent: false, devMode: true, provider: 'smtp' };
   }
 
   const transporter = nodemailer.createTransport({
@@ -91,7 +87,55 @@ const sendMail = async ({ to, subject, html, text }) => {
   });
 
   await transporter.sendMail({ from, to, subject, html, text });
-  return { sent: true, devMode: false };
+  return { sent: true, devMode: false, provider: 'smtp' };
+};
+
+const sendViaMailchimp = async ({ to, subject, html, text }) => {
+  const result = await MailchimpService.sendTransactional({
+    to,
+    subject,
+    html,
+    text,
+  });
+  return {
+    sent: true,
+    devMode: false,
+    provider: 'mailchimp',
+    campaignId: result.campaignId,
+  };
+};
+
+const sendMail = async ({ to, subject, html, text }) => {
+  const activeMailer = mailer();
+
+  if (!isConfigured()) {
+    console.log('\n--- [mail:dev] ---');
+    console.log(`Mailer: ${activeMailer}`);
+    console.log(`To: ${to}`);
+    console.log(`Subject: ${subject}`);
+    console.log(text || html);
+    console.log('---\n');
+    return { sent: false, devMode: true };
+  }
+
+  // Default: Mailchimp only. SMTP is opt-in via MAIL_MAILER=smtp (legacy).
+  if (activeMailer !== 'smtp') {
+    try {
+      const result = await sendViaMailchimp({ to, subject, html, text });
+      console.log(`[mail] sent via mailchimp to=${to} subject="${subject}" campaignId=${result.campaignId || ''}`);
+      return result;
+    } catch (err) {
+      console.error('[mail] Mailchimp send failed', err.message);
+      throw err;
+    }
+  }
+
+  const from = process.env.MAIL_FROM
+    || process.env.MAIL_FROM_ADDRESS
+    || process.env.SMTP_USER
+    || 'noreply@caretraker.com';
+  console.warn('[mail] using legacy SMTP mailer');
+  return sendViaSmtp({ to, subject, html, text, from });
 };
 
 /** When a candidate is added to a job */

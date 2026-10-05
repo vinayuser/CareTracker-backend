@@ -9,6 +9,7 @@ const {
   applyLeaveRequestToVisits,
   clearLeaveRequestFromVisits,
 } = require('./holidayLeaveVisits.service');
+const NotificationService = require('../common/notification.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -105,6 +106,21 @@ const createRequest = async (req, payload) => {
 
   item.pending = (Number(item.pending) || 0) + dates.length;
   await balance.save();
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.LEAVE_REQUEST_SUBMITTED,
+      category: 'schedule',
+      title: 'Leave request submitted',
+      body: `${request.caregiverName} requested ${request.days} day(s) of ${request.typeName}.`,
+      tone: 'info',
+      actionUrl: '/agency/leave-requests',
+      entityType: 'LeaveRequest',
+      entityId: request._id,
+      metadata: { caregiverName: request.caregiverName, days: request.days, typeName: request.typeName },
+    }, { moduleKey: 'AGENCY_LEAVE_REQUESTS' });
+  });
+
   return formatRequest(request);
 };
 
@@ -205,6 +221,21 @@ const reviewRequest = async (req, id, action, note = '') => {
   request.reviewedAt = new Date();
   request.reviewNote = note || '';
   await request.save();
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(request.caregiverAccountId, {
+      type: NotificationService.TYPES.LEAVE_REQUEST_REVIEWED,
+      category: 'schedule',
+      title: approved ? 'Leave request approved' : 'Leave request rejected',
+      body: `Your ${request.typeName} request (${request.rangeLabel}) was ${approved ? 'approved' : 'rejected'}.${note ? ` Note: ${note}` : ''}`,
+      tone: approved ? 'success' : 'warning',
+      actionUrl: '/caregiver/leaves',
+      entityType: 'LeaveRequest',
+      entityId: request._id,
+      metadata: { status: request.status, days: request.days },
+    });
+  });
+
   return formatRequest(request);
 };
 

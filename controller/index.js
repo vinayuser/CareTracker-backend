@@ -39,4 +39,5 @@ module.exports = {
   LeaveController: require('./agency/LeaveController'),
   CaregiverController: require('./caregiver/CaregiverController'),
   CaregiverEvvEnrollmentController: require('./caregiver/EvvEnrollmentController'),
+  NotificationController: require('./NotificationController'),
 };

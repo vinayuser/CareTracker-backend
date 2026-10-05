@@ -7,6 +7,7 @@ const {
   assertLoginIdentifiersAvailable,
 } = require('../../common/emailAvailability');
 const { sendHrWelcomeEmail, sendHrCustomEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 
 const formatHrStaff = (doc) => {
   const client = functions.toClientDoc(doc);
@@ -154,6 +155,29 @@ const create = async (req, payload) => {
   } catch (err) {
     console.error('[hrStaff.create] welcome email failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const hrName = `${payload.firstName} ${payload.lastName}`.trim();
+    const payloadBase = {
+      type: NotificationService.TYPES.HR_STAFF_CREATED,
+      category: 'system',
+      title: 'HR team member added',
+      body: `${hrName} was added as ${payload.jobTitle || 'HR staff'}.`,
+      tone: 'success',
+      actionUrl: '/agency/hr/staff',
+      entityType: 'HrStaff',
+      entityId: hrStaff._id,
+      metadata: { hrName, jobTitle: payload.jobTitle },
+    };
+    await NotificationService.notifyAccount(account._id, {
+      ...payloadBase,
+      title: 'Welcome to the team',
+      body: `Your HR account for ${agency?.name || 'the agency'} is ready. Check your email for login details.`,
+      actionUrl: '/agency/dashboard',
+    });
+    await NotificationService.notifyAgency(agencyId, payloadBase, { moduleKey: 'AGENCY_HR_STAFF' });
+  });
 
   return formatHrStaff(hrStaff);
 };
@@ -304,6 +328,22 @@ const sendEmail = async (req, id, payload) => {
     message: payload.message,
     senderName: owner?.fullName || owner?.name || '',
   });
+
+  if (member.accountId) {
+    NotificationService.emit(async () => {
+      await NotificationService.notifyAccount(member.accountId, {
+        type: NotificationService.TYPES.MESSAGE_RECEIVED,
+        category: 'message',
+        title: payload.subject || 'New message',
+        body: String(payload.message || '').slice(0, 240),
+        tone: 'info',
+        actionUrl: '/agency/dashboard',
+        entityType: 'HrStaff',
+        entityId: member._id,
+        metadata: { subject: payload.subject, senderName: owner?.fullName || owner?.name || '' },
+      });
+    });
+  }
 
   return {
     id: String(member._id),

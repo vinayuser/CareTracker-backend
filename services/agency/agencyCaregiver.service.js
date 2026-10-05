@@ -8,6 +8,7 @@ const {
   assertLoginIdentifiersAvailable,
 } = require('../../common/emailAvailability');
 const { sendCandidateCustomEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -252,6 +253,20 @@ const sendEmail = async (req, id, payload) => {
     subject: payload.subject,
     message: payload.message,
     senderName: sender?.fullName || sender?.name || '',
+  });
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAccount(account._id, {
+      type: NotificationService.TYPES.MESSAGE_RECEIVED,
+      category: 'message',
+      title: payload.subject || 'New message',
+      body: String(payload.message || '').slice(0, 240),
+      tone: 'info',
+      actionUrl: '/caregiver/dashboard',
+      entityType: 'AgencyAccount',
+      entityId: account._id,
+      metadata: { subject: payload.subject, senderName: sender?.fullName || sender?.name || '' },
+    });
   });
 
   return {

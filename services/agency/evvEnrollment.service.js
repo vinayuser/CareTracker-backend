@@ -14,6 +14,7 @@ const {
   uniqueEmails,
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
+const NotificationService = require('../common/notification.service');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -392,6 +393,45 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       } catch (err) {
         console.error('[syncFromCarePlan] EVV client assignment email failed', err.message);
       }
+
+      NotificationService.emit(async () => {
+        const actionPath = `/caregiver/evv-enrollments/${enrollment._id}`;
+        const payload = {
+          type: NotificationService.TYPES.EVV_ENROLLMENT_ASSIGNED,
+          category: 'compliance',
+          title: 'EVV enrollment assigned',
+          body: `Complete enrollment ${enrollment.enrollmentCode} for ${enrollment.clientName}.`,
+          tone: 'info',
+          actionUrl: actionPath,
+          entityType: 'EvvEnrollment',
+          entityId: enrollment._id,
+          metadata: { enrollmentCode: enrollment.enrollmentCode, clientName: enrollment.clientName },
+        };
+        await NotificationService.notifyAccount(caregiverId, payload);
+        await NotificationService.notifyAgency(agencyId, {
+          ...payload,
+          title: 'EVV enrollment created',
+          body: `Enrollment ${enrollment.enrollmentCode} assigned to ${caregiver.fullName || 'caregiver'} for ${enrollment.clientName}.`,
+          actionUrl: `/agency/evv/enrollments/${enrollment._id}/review`,
+        }, { moduleKey: 'AGENCY_EVV_ENROLLMENTS' });
+        await NotificationService.notifyPlatformAdmins({
+          ...payload,
+          title: `EVV enrollment assigned — ${agency?.name || 'Agency'}`,
+          body: `${agency?.name || 'Agency'}: ${enrollment.enrollmentCode} for ${enrollment.clientName}.`,
+          actionUrl: '/admin/evv-compliance',
+        });
+        const clientAccount = client.accountId
+          ? await Model.AgencyAccountModel.findOne({ _id: client.accountId, role: 'CLIENT' }).select('_id')
+          : await Model.AgencyAccountModel.findOne({ agencyId, clientId: client._id, role: 'CLIENT' }).select('_id');
+        if (clientAccount) {
+          await NotificationService.notifyAccount(clientAccount._id, {
+            ...payload,
+            title: 'EVV enrollment ready for review',
+            body: `Review enrollment ${enrollment.enrollmentCode} with ${caregiver.fullName || 'your caregiver'}.`,
+            actionUrl: `/client/evv-enrollments/${enrollment._id}`,
+          });
+        }
+      });
     } else if (enrollment.status === 'Pending' || enrollment.status === 'Rejected') {
       enrollment.planCode = carePlanDoc.planCode || '';
       enrollment.clientName = `${client.firstName} ${client.lastName}`.trim();
@@ -732,6 +772,7 @@ const submitCaregiver = async (req, id, payload) => {
   const notifyPayload = {
     agencyId: String(agencyId),
     enrollmentId: String(populated._id),
+    caregiverAccountId: caregiver._id || caregiver.id,
     enrollmentCode: populated.enrollmentCode,
     clientName: populated.clientName
       || (populated.clientId
@@ -760,6 +801,8 @@ const submitCaregiver = async (req, id, payload) => {
 
 const notifyEvvEnrollmentSubmitted = async ({
   agencyId,
+  enrollmentId,
+  caregiverAccountId,
   enrollmentCode,
   clientName,
   caregiverName,
@@ -799,6 +842,42 @@ const notifyEvvEnrollmentSubmitted = async ({
     } catch (err) {
       console.error('[evvEnrollment] caregiver submit confirmation failed', err.message);
     }
+  }
+
+  const actionPath = enrollmentId
+    ? `/agency/evv/enrollments/${enrollmentId}/review`
+    : '/agency/evv/enrollments';
+  const payload = {
+    type: NotificationService.TYPES.EVV_ENROLLMENT_SUBMITTED,
+    category: 'compliance',
+    title: 'EVV enrollment submitted',
+    body: `${caregiverName} submitted enrollment ${enrollmentCode} for ${clientName}.`,
+    tone: 'info',
+    actionUrl: actionPath,
+    entityType: 'EvvEnrollment',
+    entityId: enrollmentId,
+    metadata: { enrollmentCode, clientName, caregiverName },
+  };
+  await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_EVV_ENROLLMENTS' });
+  await NotificationService.notifyPlatformAdmins({
+    ...payload,
+    title: `EVV enrollment submitted — ${agencyName}`,
+    body: `${agencyName}: ${caregiverName} submitted ${enrollmentCode} for ${clientName}.`,
+    actionUrl: '/admin/evv-compliance',
+  });
+
+  if (caregiverAccountId) {
+    await NotificationService.notifyAccount(caregiverAccountId, {
+      type: NotificationService.TYPES.EVV_ENROLLMENT_SUBMIT_CONFIRMATION,
+      category: 'compliance',
+      title: 'EVV enrollment submitted',
+      body: `Your enrollment ${enrollmentCode} for ${clientName} was submitted successfully.`,
+      tone: 'success',
+      actionUrl: enrollmentId ? `/caregiver/evv-enrollments/${enrollmentId}` : '/caregiver/evv-enrollments',
+      entityType: 'EvvEnrollment',
+      entityId: enrollmentId,
+      metadata: { enrollmentCode, clientName },
+    });
   }
 };
 

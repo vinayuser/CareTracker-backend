@@ -22,6 +22,28 @@ router.patch(
   Controller.AdminAuthController.changePassword,
 );
 
+// Notifications (admin + agency portals)
+router.get(
+  '/notifications',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.NotificationController.list,
+);
+router.get(
+  '/notifications/unread-count',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.NotificationController.unreadCount,
+);
+router.patch(
+  '/notifications/read-all',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.NotificationController.markAllRead,
+);
+router.patch(
+  '/notifications/:id/read',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.NotificationController.markRead,
+);
+
 // Public registration
 router.get('/registration/check-user-id', Controller.RegistrationController.checkUserId);
 router.post('/registration/account', Controller.RegistrationController.createAccount);

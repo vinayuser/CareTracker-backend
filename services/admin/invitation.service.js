@@ -3,6 +3,7 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const { assertEmailGloballyAvailable } = require('../../common/emailAvailability');
 const { sendAgencyInvitationEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 
 const formatInvitation = (invitation, req) => {
   const client = functions.toClientDoc(invitation);
@@ -75,6 +76,21 @@ const send = async (req, payload) => {
   const inviteUrl = await deliverInvitationEmail(invitation, req);
   const formatted = formatInvitation(invitation, req);
   formatted.inviteUrl = inviteUrl;
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyPlatformAdmins({
+      type: NotificationService.TYPES.INVITATION_SENT,
+      category: 'system',
+      title: 'Agency invitation sent',
+      body: `Invitation sent to ${invitation.email} for ${invitation.agencyName}.`,
+      tone: 'info',
+      actionUrl: '/admin/invitations',
+      entityType: 'Invitation',
+      entityId: invitation._id,
+      metadata: { email: invitation.email, agencyName: invitation.agencyName, planName: invitation.planName },
+    });
+  });
+
   return formatted;
 };
 
@@ -96,6 +112,21 @@ const resend = async (req, id) => {
   const inviteUrl = await deliverInvitationEmail(invitation, req);
   const formatted = formatInvitation(invitation, req);
   formatted.inviteUrl = inviteUrl;
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyPlatformAdmins({
+      type: NotificationService.TYPES.INVITATION_SENT,
+      category: 'system',
+      title: 'Agency invitation resent',
+      body: `Invitation resent to ${invitation.email} for ${invitation.agencyName}.`,
+      tone: 'info',
+      actionUrl: '/admin/invitations',
+      entityType: 'Invitation',
+      entityId: invitation._id,
+      metadata: { email: invitation.email, agencyName: invitation.agencyName, planName: invitation.planName },
+    });
+  });
+
   return formatted;
 };
 

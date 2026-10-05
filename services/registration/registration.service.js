@@ -7,6 +7,7 @@ const {
   sendAgencyPaymentInvoiceEmail,
 } = require('../common/mail.service');
 const { getAdminEmails, agencyPortalUrl } = require('../common/notifyHelpers');
+const NotificationService = require('../common/notification.service');
 const {
   assertLoginIdentifiersAvailable,
 } = require('../../common/emailAvailability');
@@ -130,6 +131,38 @@ const notifyRegistrationComplete = async (req, {
   } catch (err) {
     console.error('[registration] admin onboard email failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyPlatformAdmins({
+      type: NotificationService.TYPES.AGENCY_ONBOARDED,
+      category: 'system',
+      title: `New agency onboarded: ${agency.name}`,
+      body: `${ownerName || ownerEmail} registered on the ${plan?.name || 'subscription'} plan.`,
+      tone: 'success',
+      actionUrl: '/admin/agencies',
+      entityType: 'Agency',
+      entityId: agency._id,
+      metadata: { ownerEmail, planName: plan?.name },
+    });
+
+    const owner = await Model.AgencyAccountModel.findOne({
+      agencyId: agency._id,
+      role: 'AGENCY_OWNER',
+    }).select('_id');
+    if (owner) {
+      await NotificationService.notifyAccount(owner._id, {
+        type: NotificationService.TYPES.REGISTRATION_COMPLETE,
+        category: 'system',
+        title: 'Welcome to CareTraker',
+        body: `${agency.name} is registered on the ${plan?.name || 'subscription'} plan. Check your email for login details.`,
+        tone: 'success',
+        actionUrl: '/agency/dashboard',
+        entityType: 'Agency',
+        entityId: agency._id,
+        metadata: { planName: plan?.name },
+      });
+    }
+  });
 };
 
 const submitRegistration = async (req, payload) => {

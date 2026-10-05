@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildEmptyFormData, getFormSchema, hasPdfForm } = require('../../common/hiringFormSchemas');
 const { sendCandidateStageFormsEmail, sendCandidateFormResetEmail } = require('../common/mail.service');
+const NotificationService = require('../common/notification.service');
 const { getAgencyId } = require('./jobPost.service');
 
 const TOKEN_TTL_DAYS = 30;
@@ -270,6 +271,23 @@ const issueStageAccess = async (req, applicationId, options = {}) => {
     } catch (err) {
       console.error('[candidateForm] email failed', err.message);
     }
+  }
+
+  if (!options.skipNotify) {
+    NotificationService.emit(async () => {
+      const candidateName = `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim() || 'Candidate';
+      await NotificationService.notifyAgency(application.agencyId, {
+        type: NotificationService.TYPES.HIRING_FORMS_SENT,
+        category: 'hiring',
+        title: 'Hiring forms sent',
+        body: `${documents.length} form(s) sent to ${candidateName} for ${stage.name}.`,
+        tone: 'info',
+        actionUrl: '/agency/hr/hiring-pipeline',
+        entityType: 'CandidateApplication',
+        entityId: application._id,
+        metadata: { candidateName, stageName: stage.name, formCount: documents.length },
+      }, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
+    });
   }
 
   return {
@@ -703,6 +721,21 @@ const resetFormSubmission = async (req, applicationId, documentCode) => {
       console.error('[candidateForm] reset email failed', err.message);
     }
   }
+
+  NotificationService.emit(async () => {
+    const candidateName = `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim() || 'Candidate';
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.HIRING_FORM_RESET,
+      category: 'hiring',
+      title: 'Hiring form reset',
+      body: `${submission.documentName} reset and resent to ${candidateName}.`,
+      tone: 'warning',
+      actionUrl: '/agency/hr/hiring-pipeline',
+      entityType: 'CandidateApplication',
+      entityId: applicationId,
+      metadata: { candidateName, documentName: submission.documentName, stageName: stage?.name },
+    }, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
+  });
 
   const submissions = await Model.CandidateFormSubmissionModel.find({ applicationId, stageId });
   const documents = resolveIssuedDocuments(stage, access);

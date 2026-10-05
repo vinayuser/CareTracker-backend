@@ -13,6 +13,7 @@ const {
   uniqueEmails,
   agencyPortalUrl,
 } = require('../common/notifyHelpers');
+const NotificationService = require('../common/notification.service');
 
 const notifyCarePlanChange = async (req, plan, client, action = 'updated', version) => {
   try {
@@ -45,6 +46,28 @@ const notifyCarePlanChange = async (req, plan, client, action = 'updated', versi
   } catch (err) {
     console.error('[carePlan] notify failed', err.message);
   }
+
+  NotificationService.emit(async () => {
+    const agencyId = plan.agencyId?._id || plan.agencyId;
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const payload = {
+      type: NotificationService.TYPES.CARE_PLAN_UPDATED,
+      category: 'clinical',
+      title: `Care plan ${action}`,
+      body: `Care plan ${plan.planCode} for ${clientName || 'client'} was ${action}.`,
+      tone: 'info',
+      actionUrl: `/agency/care-plans/${planId}`,
+      entityType: 'CarePlan',
+      entityId: planId,
+      metadata: { planCode: plan.planCode, action, version: version || plan.version },
+    };
+    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_CARE_PLANS' });
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: `Care plan ${action} — ${agency?.name || 'Agency'}`,
+      actionUrl: '/admin/clients',
+    });
+  });
 };
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
