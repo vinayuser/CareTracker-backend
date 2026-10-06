@@ -1,5 +1,6 @@
 const { getFrontendUrl } = require('../../common/functions');
 const MailchimpService = require('./mailchimp.service');
+const { formatDateTimeInZone } = require('../../common/timezone');
 
 const PRIMARY = '#0055d4';
 const SIDEBAR = '#001529';
@@ -99,64 +100,40 @@ const sendViaMailchimp = async ({ to, subject, html, text }) => {
   });
   return {
     sent: true,
-    queued: false,
     devMode: false,
     provider: 'mailchimp',
     campaignId: result.campaignId,
   };
 };
 
-const deliverMail = async ({ to, subject, html, text }) => {
-  const activeMailer = mailer();
-
-  if (activeMailer !== 'smtp') {
-    const result = await sendViaMailchimp({ to, subject, html, text });
-    console.log(`[mail] sent via mailchimp to=${to} subject="${subject}" campaignId=${result.campaignId || ''}`);
-    return result;
-  }
-
-  const from = process.env.MAIL_FROM
+const sendMail = async ({ to, subject, html, text }) => {
+  const from = process.env.MAILCHIMP_FROM_EMAIL
+    || process.env.MAIL_FROM
     || process.env.MAIL_FROM_ADDRESS
     || process.env.SMTP_USER
     || 'noreply@caretraker.com';
-  console.warn('[mail] using legacy SMTP mailer');
-  return sendViaSmtp({ to, subject, html, text, from });
-};
-
-/**
- * Queue outbound email and return immediately so API/form saves are not blocked
- * by Mailchimp/SMTP latency. Pass `{ wait: true }` only when the caller must
- * know the delivery outcome before responding.
- */
-const sendMail = async ({ to, subject, html, text, wait = false }) => {
-  const activeMailer = mailer();
 
   if (!isConfigured()) {
     console.log('\n--- [mail:dev] ---');
-    console.log(`Mailer: ${activeMailer}`);
+    console.log(`Mailer: ${mailer()}`);
     console.log(`To: ${to}`);
     console.log(`Subject: ${subject}`);
     console.log(text || html);
     console.log('---\n');
-    return { sent: false, queued: false, devMode: true };
+    return { sent: false, devMode: true };
   }
 
-  if (wait) {
-    return deliverMail({ to, subject, html, text });
+  // Default / preferred path: Mailchimp. SMTP only when explicitly requested.
+  if (mailer() !== 'smtp') {
+    try {
+      return await sendViaMailchimp({ to, subject, html, text });
+    } catch (err) {
+      console.error('[mail] Mailchimp send failed', err.message);
+      throw err;
+    }
   }
 
-  setImmediate(() => {
-    deliverMail({ to, subject, html, text }).catch((err) => {
-      console.error(`[mail] background send failed to=${to} subject="${subject}"`, err.message);
-    });
-  });
-
-  return {
-    sent: true,
-    queued: true,
-    provider: activeMailer === 'smtp' ? 'smtp' : 'mailchimp',
-    devMode: false,
-  };
+  return sendViaSmtp({ to, subject, html, text, from });
 };
 
 /** When a candidate is added to a job */
@@ -1211,16 +1188,14 @@ const sendPasswordResetEmail = async ({
 }) => {
   const subject = 'Reset your CareTraker password';
   const displayName = name || 'there';
+  // Fixed UTC so expiry is the same for everyone (not server/device local time)
   const expiry = expiresAt
-    ? new Date(expiresAt).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-    : '1 hour';
+    ? formatDateTimeInZone(expiresAt, 'UTC')
+    : null;
   const link = resetUrl || `${getFrontendUrl(req)}/reset-password`;
+  const expiryLine = expiry
+    ? `For your security, this link works for about 1 hour (until ${expiry}).`
+    : 'For your security, this link works for about 1 hour.';
 
   const text = [
     `Hello ${displayName},`,
@@ -1228,7 +1203,7 @@ const sendPasswordResetEmail = async ({
     'We received a request to reset your CareTraker password.',
     '',
     `Reset your password: ${link}`,
-    `This link expires at ${expiry}.`,
+    expiryLine,
     '',
     'If you did not request this, you can ignore this email.',
     '',
@@ -1243,7 +1218,7 @@ const sendPasswordResetEmail = async ({
     </p>
     ${ctaButton(link, 'Reset Password')}
     <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
-      This link expires at ${escapeHtml(String(expiry))}.
+      ${escapeHtml(expiryLine)}
     </p>
     <p style="margin:16px 0 0;font-size:13px;color:#64748b;">
       Or copy this link:<br />

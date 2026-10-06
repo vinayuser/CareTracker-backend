@@ -44,24 +44,46 @@ const resolvePendingInvitationExclude = async (invitationToken) => {
   return invitation ? { invitationId: invitation._id } : {};
 };
 
-const checkUserIdAvailability = async (userId, invitationToken) => {
+const checkUserIdAvailability = async (userId, email, invitationToken) => {
+  const normalizedUserId = String(userId || '').trim().toLowerCase();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedUserId || normalizedUserId.length < 3) {
+    throw new Error('Username must be at least 3 characters');
+  }
+  if (normalizedUserId.includes('@')) {
+    throw new Error('Username cannot be an email address');
+  }
+  if (!normalizedEmail) {
+    throw new Error('Email is required');
+  }
+
   const exclude = await resolvePendingInvitationExclude(invitationToken);
-  await assertLoginIdentifiersAvailable({ userId, email: userId, exclude });
+  await assertLoginIdentifiersAvailable({
+    userId: normalizedUserId,
+    email: normalizedEmail,
+    exclude,
+  });
   return { available: true };
 };
 
 const createAccount = async (payload) => {
+  const email = String(payload.email || '').trim().toLowerCase();
+  const userId = String(payload.userId || '').trim().toLowerCase();
+  if (!email) throw new Error('Email is required');
+  if (!userId) throw new Error('Username is required');
+  if (userId.includes('@')) throw new Error('Username cannot be an email address');
+
   const exclude = await resolvePendingInvitationExclude(payload.invitationToken);
 
   await assertLoginIdentifiersAvailable({
-    email: payload.email,
-    userId: payload.email,
+    email,
+    userId,
     exclude,
   });
 
   const account = new Model.AgencyAccountModel({
-    userId: payload.email.toLowerCase(),
-    email: payload.email.toLowerCase(),
+    userId,
+    email,
     fullName: payload.fullName,
     password: 'placeholder',
   });
@@ -73,7 +95,7 @@ const createAccount = async (payload) => {
     await account.save();
   }
 
-  return { userId: account.userId, fullName: account.fullName };
+  return { userId: account.userId, email: account.email, fullName: account.fullName };
 };
 
 const notifyRegistrationComplete = async (req, {
@@ -178,8 +200,13 @@ const submitRegistration = async (req, payload) => {
   const loginEmail = (payload.email || payload.userId || '').toLowerCase();
   const loginUserId = (payload.userId || payload.email || '').toLowerCase();
   let existingAccount = null;
-  if (loginUserId) {
-    existingAccount = await Model.AgencyAccountModel.findOne({ userId: loginUserId });
+  if (loginUserId || loginEmail) {
+    existingAccount = await Model.AgencyAccountModel.findOne({
+      $or: [
+        ...(loginUserId ? [{ userId: loginUserId }] : []),
+        ...(loginEmail ? [{ email: loginEmail }] : []),
+      ],
+    });
   }
 
   if (payload.userId && payload.password) {
@@ -228,9 +255,12 @@ const submitRegistration = async (req, payload) => {
       });
       await account.setPassword(payload.password);
     }
+    if (loginEmail) account.email = loginEmail;
+    if (loginUserId) account.userId = loginUserId;
     account.agencyId = agency._id;
     account.role = account.role || 'AGENCY_OWNER';
     account.status = 'Active';
+    if (payload.fullName) account.fullName = payload.fullName;
     if (invitationDoc) account.invitationId = invitationDoc._id;
     await account.save();
   }

@@ -94,6 +94,26 @@ const weekdayShortInZone = (dateKey, timeZone = DEFAULT_TIMEZONE) => {
   }).format(noon);
 };
 
+/**
+ * Format an instant in a fixed IANA zone (not the server/device local clock).
+ * Example: "Oct 6, 2026, 4:30 PM EDT"
+ */
+const formatDateTimeInZone = (value, timeZone = DEFAULT_TIMEZONE) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const tz = timeZone || DEFAULT_TIMEZONE;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(date);
+};
+
 module.exports = {
   TIMEZONES,
   DEFAULT_TIMEZONE,
@@ -102,4 +122,5 @@ module.exports = {
   dateKeyInZone,
   zonedTimeToUtc,
   weekdayShortInZone,
+  formatDateTimeInZone,
 };

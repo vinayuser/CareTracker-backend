@@ -507,6 +507,27 @@ const getById = async (id) => {
   formatted.caregiverTotal = usage.caregivers;
   formatted.plan = plan;
   formatted.timeline = buildTimeline(agency, plan);
+
+  const lastPaid = await Model.AgencySubscriptionInvoiceModel.findOne({
+    agencyId: agency._id,
+    status: 'Paid',
+  }).sort({ paidAt: -1, invoiceDate: -1 }).select('paidAt invoiceDate').lean();
+
+  const nextDueDate = getNextRenewalDate(
+    agency.registeredAt || agency.createdAt,
+    plan?.billingCycle,
+    lastPaid?.paidAt || lastPaid?.invoiceDate,
+  );
+  formatted.subscription = {
+    startDate: agency.registeredAt || agency.createdAt || null,
+    nextDueDate,
+    nextRenewalDate: nextDueDate,
+    nextBillingDate: nextDueDate,
+    daysLeft: daysUntilDate(nextDueDate),
+    autoRenewal: agency.autoRenewal !== false && agency.status === 'Active' && Boolean(plan),
+    status: agency.status || '',
+  };
+
   return formatted;
 };
 
@@ -744,10 +765,21 @@ const getBilling = async (agencyId) => {
     features,
     subscription: {
       startDate: startDate || null,
+      nextDueDate: nextRenewalDate,
       nextRenewalDate,
+      nextBillingDate: nextRenewalDate,
       daysLeft: daysUntilDate(nextRenewalDate),
       autoRenewal: agency.autoRenewal !== false && agency.status === 'Active' && Boolean(plan),
       status: agency.status || '',
+    },
+    agency: {
+      id: String(agency._id),
+      name: agency.name || '',
+      email: agency.email || '',
+      phone: agency.phone || '',
+      address: agency.address || '',
+      city: agency.city || '',
+      state: agency.state || '',
     },
     usage: {
       clients: { used: usage.clients || 0, limit: plan?.limits?.maxClients ?? null },
@@ -762,8 +794,18 @@ const getBilling = async (agencyId) => {
       total,
       defaultPaymentMethod: defaultMethod,
       hasPendingInvoice: Boolean(pending),
+      nextDueDate: nextRenewalDate,
     },
-    invoices: invoices.slice(0, 5),
+    invoices: invoices.slice(0, 10).map((inv) => ({
+      ...inv,
+      agencyId: String(agency._id),
+      agencyName: agency.name || '',
+      agencyEmail: agency.email || '',
+      agencyPhone: agency.phone || '',
+      agencyAddress: agency.address || '',
+      agencyCity: agency.city || '',
+      agencyState: agency.state || '',
+    })),
     invoiceTotal: invoices.length,
     paymentMethods,
     payments: invoices
@@ -775,6 +817,7 @@ const getBilling = async (agencyId) => {
         amount: inv.total,
         label: 'Payment Successful',
         paymentMethodLabel: inv.paymentMethodLabel || '',
+        invoiceCode: inv.invoiceCode,
       })),
   };
 };

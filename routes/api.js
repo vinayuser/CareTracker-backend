@@ -21,6 +21,11 @@ router.patch(
   Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
   Controller.AdminAuthController.changePassword,
 );
+router.get(
+  '/auth/check-login-id',
+  Auth.authenticate('agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.AdminAuthController.checkLoginId,
+);
 
 // Notifications (admin + agency portals)
 router.get(
@@ -141,6 +146,10 @@ router.get('/admin/time-cards/:id', Auth.authenticate('super_admin'), Controller
 router.get('/admin/finance/stats', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getStats);
 router.get('/admin/finance', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getGroupedLines);
 router.get('/admin/finance/:id', Auth.authenticate('super_admin'), Controller.AdminFinanceController.getInvoiceById);
+
+router.get('/admin/payments/stats', Auth.authenticate('super_admin'), Controller.AdminPaymentsController.getStats);
+router.get('/admin/payments', Auth.authenticate('super_admin'), Controller.AdminPaymentsController.list);
+router.get('/admin/payments/:id', Auth.authenticate('super_admin'), Controller.AdminPaymentsController.getById);
 
 router.get('/admin/team/stats', Auth.authenticate('super_admin'), Controller.AdminTeamController.getStats);
 router.get('/admin/team', Auth.authenticate('super_admin'), Controller.AdminTeamController.getAll);

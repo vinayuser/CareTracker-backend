@@ -21,7 +21,7 @@ module.exports = {
     USER: {
       NOT_FOUND: 'User Not Found',
       EMAIL_ALREADY_IN_USE: 'This email is already registered with another account',
-      USER_ID_TAKEN: 'User ID is already taken',
+      USER_ID_TAKEN: 'Username is already taken',
     },
     INVITATION: {
       SENT: 'Invitation Sent Successfully',
@@ -123,7 +123,7 @@ module.exports = {
       STATUS_UPDATED: 'Caregiver status updated',
       EMAIL_SENT: 'Email sent to caregiver',
       EMAIL_MISSING: 'Caregiver email not found',
-      USER_ID_TAKEN: 'Login ID or email is already in use',
+      USER_ID_TAKEN: 'Username is already taken',
     },
     HOLIDAY: {
       CREATED: 'Holiday created successfully',

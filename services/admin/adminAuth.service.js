@@ -161,9 +161,16 @@ const login = async (req) => {
   // Reuse jti so existing device sessions stay valid (multi-device login).
   await ensureSessionJti(account);
 
+  const isFirstLogin = !account.lastLoginAt;
+  account.lastLoginAt = new Date();
+  await account.save();
+
+  const user = await formatAgencyUser(account);
+  user.isFirstLogin = isFirstLogin;
+
   return {
     token: issueAgencyToken(account),
-    user: await formatAgencyUser(account),
+    user,
   };
 };
 
@@ -189,6 +196,32 @@ const assertEmailAvailable = async ({ email, excludeAdminId, excludeAccountId })
     adminId: excludeAdminId,
     accountId: excludeAccountId,
   });
+};
+
+const checkLoginIdAvailability = async (req) => {
+  const session = req.agency_owner || req.hr || req.caregiver || req.client;
+  if (!session) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
+
+  const account = await Model.AgencyAccountModel.findById(session._id || session.id);
+  if (!account || account.status === 'Inactive') {
+    throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
+  }
+
+  const userId = String(req.query.userId || '').trim().toLowerCase();
+  if (!userId || userId.length < 3) {
+    throw new Error('Username must be at least 3 characters');
+  }
+  if (userId.includes('@')) {
+    throw new Error('Username cannot be an email address');
+  }
+
+  await assertLoginIdentifiersAvailable({
+    email: account.email,
+    userId,
+    exclude: { accountId: account._id },
+  });
+
+  return { available: true };
 };
 
 const updateProfile = async (req, payload = {}) => {
@@ -397,6 +430,7 @@ const resetPassword = async (payload = {}) => {
 module.exports = {
   login,
   getMe,
+  checkLoginIdAvailability,
   updateProfile,
   changePassword,
   forgotPassword,

@@ -21,6 +21,15 @@ module.exports.me = async (req, res, next) => {
   }
 };
 
+module.exports.checkLoginId = async (req, res, next) => {
+  try {
+    const data = await AdminAuthService.checkLoginIdAvailability(req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.updateProfile = async (req, res, next) => {
   try {
     await Validation.Auth.updateProfile.validateAsync(req.body);

@@ -30,6 +30,7 @@ const AgencyAccountSchema = new mongoose.Schema(
     profilePicPath: { type: String, default: '' },
     passwordResetToken: { type: String, default: '', index: true },
     passwordResetExpires: { type: Date, default: null },
+    lastLoginAt: { type: Date, default: null },
   },
   {
     timestamps: true,
