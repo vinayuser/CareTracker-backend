@@ -12,6 +12,9 @@ const DOC_KEYS = [
 ];
 
 const ALLOWED_EXT = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'];
+const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'];
+const MAX_IMAGE_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB (PDFs / non-images)
 
 const baseDir = path.join(__dirname, '../uploads/insurance-intakes');
 
@@ -31,7 +34,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: MAX_FILE_BYTES },
   fileFilter: (req, file, cb) => {
     const docKey = String(req.params.docKey || '');
     if (!DOC_KEYS.includes(docKey)) {
@@ -45,7 +48,34 @@ const upload = multer({
   },
 });
 
+const singleUpload = upload.single('document');
+
+function unlinkQuiet(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // ignore
+  }
+}
+
+function enforceImageSize(req, res, next) {
+  const file = req.file;
+  if (!file) return next();
+  const ext = path.extname(file.originalname || file.filename || '').toLowerCase();
+  const isImage = IMAGE_EXT.includes(ext) || String(file.mimetype || '').startsWith('image/');
+  if (isImage && file.size > MAX_IMAGE_BYTES) {
+    unlinkQuiet(file.path);
+    return next(new Error('Image must be 1 MB or smaller'));
+  }
+  return next();
+}
+
 module.exports = {
   DOC_KEYS,
-  uploadDocument: upload.single('document'),
+  uploadDocument: (req, res, next) => {
+    singleUpload(req, res, (err) => {
+      if (err) return next(err);
+      return enforceImageSize(req, res, next);
+    });
+  },
 };

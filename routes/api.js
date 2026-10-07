@@ -83,6 +83,7 @@ router.post('/admin/agencies/:id/archive', Auth.authenticate('super_admin'), Con
 router.post('/admin/agencies/:id/restore', Auth.authenticate('super_admin'), Controller.AgencyController.restore);
 router.patch('/admin/agencies/:id/password', Auth.authenticate('super_admin'), Controller.AgencyController.setPassword);
 router.post('/admin/agencies/:id/reset-password', Auth.authenticate('super_admin'), Controller.AgencyController.resetPassword);
+router.get('/admin/agencies/:id/activity', Auth.authenticate('super_admin'), Controller.AgencyController.getActivity);
 router.get('/admin/agencies/:id/caregivers', Auth.authenticate('super_admin'), Controller.AgencyController.getCaregivers);
 router.get('/admin/agencies/:id/billing', Auth.authenticate('super_admin'), Controller.AgencyController.getBilling);
 router.get('/admin/agencies/:id/documents', Auth.authenticate('super_admin'), Controller.AgencyController.getDocuments);
@@ -114,10 +115,12 @@ router.patch('/admin/users/:id/status', Auth.authenticate('super_admin'), Contro
 router.get('/admin/clients/stats', Auth.authenticate('super_admin'), Controller.AdminClientsController.getStats);
 router.get('/admin/clients', Auth.authenticate('super_admin'), Controller.AdminClientsController.getClients);
 router.get('/admin/clients/:id/overview', Auth.authenticate('super_admin'), Controller.AdminClientsController.getOverview);
+router.patch('/admin/clients/:id/status', Auth.authenticate('super_admin'), Controller.AdminClientsController.updateStatus);
 
 router.get('/admin/caregivers/stats', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getStats);
 router.get('/admin/caregivers', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getCaregivers);
 router.get('/admin/caregivers/:id/overview', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.getOverview);
+router.put('/admin/caregivers/:id', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.updateCaregiver);
 router.patch('/admin/caregivers/:id/status', Auth.authenticate('super_admin'), Controller.AdminCaregiversController.updateStatus);
 
 router.get('/admin/schedules/caregiver', Auth.authenticate('super_admin'), Controller.AdminSchedulesController.getCaregiverSchedule);
@@ -132,6 +135,7 @@ router.get('/admin/billing-claims/:id', Auth.authenticate('super_admin'), Contro
 
 router.get('/admin/marketing/mailchimp', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpStatus);
 router.get('/admin/marketing/mailchimp/lists', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpLists);
+router.get('/admin/marketing/platform-audience', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getPlatformAudience);
 router.post('/admin/marketing/campaigns/send', Auth.authenticate('super_admin'), Controller.AdminMarketingController.sendCampaign);
 
 router.get('/admin/reports/evv-summary/options', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOptions);

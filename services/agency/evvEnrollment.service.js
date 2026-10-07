@@ -8,6 +8,8 @@ const {
   sendEvvEnrollmentClientAssignedEmail,
   sendEvvEnrollmentSubmittedEmail,
   sendEvvEnrollmentSubmitConfirmationEmail,
+  sendEvvEnrollmentVerifiedEmail,
+  sendEvvEnrollmentRejectedEmail,
 } = require('../common/mail.service');
 const {
   getAgencyContext,
@@ -51,6 +53,192 @@ const toDateInput = (value) => {
   return d.toISOString().slice(0, 10);
 };
 
+const firstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+/** Parse "City ST 12345" / "mohali 144205" style combined city-state-zip strings. */
+const parseCityStateZip = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return { city: '', state: '', zip: '' };
+  const withState = text.match(/^(.+?)[,\s]+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (withState) {
+    return { city: withState[1].trim(), state: withState[2].toUpperCase(), zip: withState[3] };
+  }
+  const zipOnly = text.match(/^(.+?)\s+(\d{5}(?:-\d{4})?)$/);
+  if (zipOnly) return { city: zipOnly[1].trim(), state: '', zip: zipOnly[2] };
+  return { city: text, state: '', zip: '' };
+};
+
+/**
+ * Map a hiring PDF submission into EVV caregiver profile fields.
+ * Prefers I-9 / Employment Application field names used in candidate portal forms.
+ */
+const profileFromHiringForm = (documentCode, formData = {}) => {
+  const fd = formData || {};
+  const code = String(documentCode || '');
+  const out = {
+    fullName: '',
+    phone: '',
+    email: '',
+    dob: '',
+    address: '',
+    aptSuite: '',
+    city: '',
+    state: '',
+    zip: '',
+  };
+
+  if (code === 'I-9') {
+    out.fullName = firstNonEmpty(
+      `${fd['First Name (Given Name)'] || ''} ${fd['Last Name (Family Name)'] || ''}`.trim(),
+    );
+    out.address = firstNonEmpty(fd['Address Street Number and Name']);
+    out.aptSuite = firstNonEmpty(fd['Apt Number (if any)']);
+    out.city = firstNonEmpty(fd['City or Town']);
+    out.state = firstNonEmpty(fd.State);
+    out.zip = firstNonEmpty(fd['ZIP Code']);
+    out.dob = toDateInput(fd['Date of Birth mmddyyyy']);
+    out.email = firstNonEmpty(fd['Employees E-mail Address']);
+    out.phone = firstNonEmpty(fd['Telephone Number']);
+    return out;
+  }
+
+  if (code === '1020') {
+    out.fullName = firstNonEmpty(fd.Name);
+    out.address = firstNonEmpty(fd.Address);
+    out.city = firstNonEmpty(fd.City);
+    out.state = firstNonEmpty(fd.State);
+    out.zip = firstNonEmpty(fd.Zip, fd.ZIP, fd.zipcode);
+    out.email = firstNonEmpty(fd['Email Address'], fd.Email);
+    out.phone = firstNonEmpty(fd.Phone, fd['Phone Number']);
+    out.dob = toDateInput(fd['Date of Birth'] || fd.DOB);
+    return out;
+  }
+
+  if (code === '1021') {
+    out.fullName = firstNonEmpty(
+      fd['Name of Employee'],
+      `${fd['First Name'] || ''} ${fd['Last Name'] || ''}`.trim(),
+    );
+    out.address = firstNonEmpty(fd.Address);
+    out.city = firstNonEmpty(fd.City);
+    out.state = firstNonEmpty(fd.State);
+    out.zip = firstNonEmpty(fd.Zip, fd.ZIP, fd.zipcode);
+    out.dob = toDateInput(fd['Date of Birth']);
+    return out;
+  }
+
+  if (code === '1010') {
+    out.fullName = firstNonEmpty(
+      fd['Employee Name'],
+      `${fd['First Name'] || ''} ${fd['Last Name'] || ''}`.trim(),
+    );
+    out.address = firstNonEmpty(fd.Mail, fd.Address);
+    out.state = firstNonEmpty(fd.State);
+    out.zip = firstNonEmpty(fd.zipcode, fd.Zip, fd.ZIP);
+    out.dob = toDateInput(fd['Date of Birth']);
+    return out;
+  }
+
+  if (code === '1070') {
+    out.fullName = firstNonEmpty(fd['Print Name'], fd['Last First Middle']);
+    out.address = firstNonEmpty(fd.Street, fd.Address);
+    const parsed = parseCityStateZip(fd.CityStateZip);
+    out.city = parsed.city;
+    out.state = firstNonEmpty(fd.State, parsed.state);
+    out.zip = parsed.zip;
+    out.dob = toDateInput(fd.DOB || fd['Date of Birth']);
+    out.phone = firstNonEmpty(fd.Phone);
+    return out;
+  }
+
+  if (code === '1600') {
+    out.fullName = firstNonEmpty(`${fd['First Name'] || ''} ${fd['Last Name'] || ''}`.trim());
+    out.address = firstNonEmpty(fd.Address);
+    out.phone = firstNonEmpty(fd['Cellular Phone'], fd.Phone, fd['Phone Numbers']);
+    out.email = firstNonEmpty(fd['Email Address']);
+    return out;
+  }
+
+  if (code === 'W-4') {
+    out.fullName = firstNonEmpty(
+      `${fd['text_ First name and middle initial'] || ''} ${fd.text_last_name || fd['text_last name'] || ''}`.trim(),
+    );
+    out.address = firstNonEmpty(fd.text_address);
+    out.city = firstNonEmpty(fd['text_City or town']);
+    return out;
+  }
+
+  return out;
+};
+
+/** Merge hiring-form profiles; earlier codes win for each non-empty field. */
+const mergeHiringFormProfiles = (submissions = []) => {
+  const priority = ['I-9', '1020', '1021', '1010', '1070', '1600', 'W-4'];
+  const byCode = new Map();
+  submissions.forEach((sub) => {
+    const code = String(sub.documentCode || '');
+    if (!code || byCode.has(code)) return;
+    byCode.set(code, sub);
+  });
+
+  const merged = {
+    fullName: '',
+    phone: '',
+    email: '',
+    dob: '',
+    address: '',
+    aptSuite: '',
+    city: '',
+    state: '',
+    zip: '',
+  };
+
+  priority.forEach((code) => {
+    const sub = byCode.get(code);
+    if (!sub) return;
+    const part = profileFromHiringForm(code, sub.formData || {});
+    Object.keys(merged).forEach((key) => {
+      if (!merged[key] && part[key]) merged[key] = part[key];
+    });
+  });
+
+  return merged;
+};
+
+/** Load personal data from the caregiver's hired application PDF forms. */
+const loadCaregiverFormProfile = async (candidateId, agencyId) => {
+  if (!candidateId) return null;
+  const application = await Model.CandidateApplicationModel.findOne({
+    candidateId,
+    ...(agencyId ? { agencyId } : {}),
+  }).sort({ updatedAt: -1 }).select('_id');
+  if (!application) return null;
+
+  const submissions = await Model.CandidateFormSubmissionModel.find({
+    applicationId: application._id,
+    status: { $in: ['Submitted', 'Draft'] },
+    documentCode: { $in: ['I-9', '1020', '1021', '1010', '1070', '1600', 'W-4'] },
+  })
+    .sort({ updatedAt: -1 })
+    .select('documentCode formData status updatedAt')
+    .lean();
+
+  if (!submissions.length) return null;
+  // Prefer Submitted over Draft when both exist for same code (already first-wins by sort + map)
+  const submittedFirst = [
+    ...submissions.filter((s) => s.status === 'Submitted'),
+    ...submissions.filter((s) => s.status !== 'Submitted'),
+  ];
+  return mergeHiringFormProfiles(submittedFirst);
+};
+
 /** Ensure caregiver has employeeId + profile fields (from candidate when needed). */
 const ensureCaregiverProfile = async (caregiver) => {
   if (!caregiver) return null;
@@ -82,17 +270,45 @@ const ensureCaregiverProfile = async (caregiver) => {
     await caregiver.save();
   }
 
-  return { caregiver, candidate: candidate && typeof candidate === 'object' ? candidate : null };
+  const candidateDoc = candidate && typeof candidate === 'object' ? candidate : null;
+  const agencyId = caregiver.agencyId?._id || caregiver.agencyId;
+  const formProfile = await loadCaregiverFormProfile(
+    candidateDoc?._id || caregiver.candidateId,
+    agencyId,
+  );
+
+  return { caregiver, candidate: candidateDoc, formProfile };
 };
 
-const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = {}, candidate = null) => {
+const buildPrefillFormData = (
+  client,
+  caregiver,
+  agency,
+  carePlan,
+  assignment = {},
+  candidate = null,
+  formProfile = null,
+) => {
   const clientFullName = client
     ? `${client.firstName || ''} ${client.lastName || ''}`.trim()
     : '';
   const clientInfo = carePlan?.formData?.clientInfo || {};
-  const caregiverPhone = caregiver?.phone || candidate?.phone || '';
-  const caregiverDob = toDateInput(caregiver?.dateOfBirth || candidate?.dateOfBirth);
-  const caregiverAddress = candidate?.location || '';
+  const fromForms = formProfile || {};
+  const caregiverPhone = firstNonEmpty(
+    caregiver?.phone,
+    candidate?.phone,
+    fromForms.phone,
+  );
+  const caregiverDob = toDateInput(
+    firstNonEmpty(caregiver?.dateOfBirth, candidate?.dateOfBirth, fromForms.dob),
+  );
+  const caregiverEmail = firstNonEmpty(caregiver?.email, candidate?.email, fromForms.email);
+  const caregiverFullName = firstNonEmpty(
+    caregiver?.fullName,
+    candidate ? `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() : '',
+    fromForms.fullName,
+  );
+  const caregiverAddress = firstNonEmpty(fromForms.address, candidate?.location);
 
   return {
     clientInfo: {
@@ -111,18 +327,16 @@ const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = 
     },
     caregiverInfo: {
       isSelf: false,
-      fullName: caregiver?.fullName
-        || (candidate ? `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() : '')
-        || '',
+      fullName: caregiverFullName,
       employeeId: caregiver?.employeeId || '',
       phone: caregiverPhone,
-      email: caregiver?.email || candidate?.email || '',
+      email: caregiverEmail,
       dob: caregiverDob,
       address: caregiverAddress,
-      aptSuite: '',
-      city: '',
-      state: '',
-      zip: '',
+      aptSuite: fromForms.aptSuite || '',
+      city: fromForms.city || '',
+      state: fromForms.state || '',
+      zip: fromForms.zip || '',
       relationship: 'Self',
       relationshipOther: '',
     },
@@ -141,7 +355,7 @@ const buildPrefillFormData = (client, caregiver, agency, carePlan, assignment = 
     mobileEnrollment: {
       smartphoneType: '',
       mobileNumber: caregiverPhone,
-      email: caregiver?.email || candidate?.email || '',
+      email: caregiverEmail,
     },
     landlineEnrollment: {
       primaryPhone: '',
@@ -332,6 +546,7 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
       carePlanDoc,
       assignment,
       candidate,
+      profile?.formProfile || null,
     );
     let enrollment = await Model.EvvEnrollmentModel.findOne({
       agencyId,
@@ -620,6 +835,33 @@ const verify = async (req, id, payload = {}) => {
     throw new Error(constants.MESSAGE.EVV_ENROLLMENT.NOT_SUBMITTED);
   }
 
+  // Agency may attach a missing client signature during review, plus office-use notes.
+  if (payload.formData) {
+    const existing = doc.formData || {};
+    const existingAuth = existing.authorization || {};
+    const incomingAuth = payload.formData.authorization || {};
+    const nextAuth = { ...existingAuth };
+    if (
+      incomingAuth.clientSignature
+      && String(incomingAuth.clientSignature).startsWith('data:image')
+      && !(existingAuth.clientSignature && String(existingAuth.clientSignature).startsWith('data:image'))
+    ) {
+      nextAuth.clientSignature = incomingAuth.clientSignature;
+      nextAuth.clientDate = toDateInput(incomingAuth.clientDate) || toDateInput(new Date());
+    } else if (incomingAuth.clientDate && !existingAuth.clientDate) {
+      nextAuth.clientDate = toDateInput(incomingAuth.clientDate);
+    }
+    doc.formData = {
+      ...existing,
+      authorization: nextAuth,
+      officeUse: {
+        ...(existing.officeUse || {}),
+        ...(payload.formData.officeUse || {}),
+      },
+    };
+    doc.markModified('formData');
+  }
+
   const action = payload.action === 'reject' ? 'Rejected' : 'Verified';
   if (action === 'Verified') {
     const auth = doc.formData?.authorization || {};
@@ -634,18 +876,109 @@ const verify = async (req, id, payload = {}) => {
   doc.verifiedAt = new Date();
   doc.verifiedByAccountId = getAccountId(req);
 
-  if (payload.formData?.officeUse) {
-    doc.formData = {
-      ...doc.formData,
-      officeUse: { ...(doc.formData?.officeUse || {}), ...payload.formData.officeUse },
-    };
-  }
-
   await doc.save();
   const populated = await Model.EvvEnrollmentModel.findById(doc._id)
     .populate('clientId')
     .populate('carePlanId');
-  return formatEvvEnrollment(populated, { client: populated.clientId, carePlan: populated.carePlanId });
+
+  const result = formatEvvEnrollment(populated, {
+    client: populated.clientId,
+    carePlan: populated.carePlanId,
+  });
+
+  // Notify caregiver (email + in-app) — fire-and-forget so verify response stays fast
+  notifyEvvEnrollmentReviewed({
+    agencyId: String(agencyId),
+    enrollmentId: String(populated._id),
+    caregiverAccountId: populated.caregiverAccountId,
+    status: action,
+    enrollmentCode: populated.enrollmentCode,
+    clientName: populated.clientName
+      || (populated.clientId
+        ? `${populated.clientId.firstName || ''} ${populated.clientId.lastName || ''}`.trim()
+        : ''),
+    caregiverName: populated.caregiverName || '',
+    serviceName: (populated.serviceAreas || []).join(', '),
+  }).catch((err) => {
+    console.error('[evvEnrollment] verify notify failed', err.message);
+  });
+
+  return result;
+};
+
+const notifyEvvEnrollmentReviewed = async ({
+  agencyId,
+  enrollmentId,
+  caregiverAccountId,
+  status,
+  enrollmentCode,
+  clientName,
+  caregiverName,
+  serviceName,
+}) => {
+  const isVerified = status === 'Verified';
+  const { agencyName } = await getAgencyContext(agencyId);
+
+  let caregiverEmail = '';
+  let resolvedCaregiverName = caregiverName || '';
+  if (caregiverAccountId) {
+    const account = await Model.AgencyAccountModel.findById(caregiverAccountId)
+      .select('email fullName');
+    caregiverEmail = account?.email || '';
+    if (!resolvedCaregiverName) resolvedCaregiverName = account?.fullName || '';
+  }
+
+  const portalUrl = enrollmentId
+    ? `${functions.getFrontendUrl()}/caregiver/evv-enrollments/${enrollmentId}`
+    : `${functions.getFrontendUrl()}/caregiver/evv-enrollments`;
+
+  if (caregiverEmail) {
+    try {
+      if (isVerified) {
+        await sendEvvEnrollmentVerifiedEmail({
+          to: caregiverEmail,
+          caregiverName: resolvedCaregiverName,
+          agencyName,
+          clientName,
+          enrollmentCode,
+          serviceName,
+          portalUrl,
+        });
+      } else {
+        await sendEvvEnrollmentRejectedEmail({
+          to: caregiverEmail,
+          caregiverName: resolvedCaregiverName,
+          agencyName,
+          clientName,
+          enrollmentCode,
+          serviceName,
+          portalUrl,
+        });
+      }
+    } catch (err) {
+      console.error('[evvEnrollment] caregiver review email failed', err.message);
+    }
+  }
+
+  if (caregiverAccountId) {
+    await NotificationService.notifyAccount(caregiverAccountId, {
+      type: isVerified
+        ? NotificationService.TYPES.EVV_ENROLLMENT_VERIFIED
+        : NotificationService.TYPES.EVV_ENROLLMENT_REJECTED,
+      category: 'compliance',
+      title: isVerified ? 'EVV enrollment verified' : 'EVV enrollment rejected',
+      body: isVerified
+        ? `Your enrollment ${enrollmentCode || ''} for ${clientName || 'your client'} was verified. You can clock in for covered visits.`
+        : `Your enrollment ${enrollmentCode || ''} for ${clientName || 'your client'} was rejected. Please update and resubmit.`,
+      tone: isVerified ? 'success' : 'warning',
+      actionUrl: enrollmentId
+        ? `/caregiver/evv-enrollments/${enrollmentId}`
+        : '/caregiver/evv-enrollments',
+      entityType: 'EvvEnrollment',
+      entityId: enrollmentId,
+      metadata: { enrollmentCode, clientName, status },
+    });
+  }
 };
 
 const remove = async (req, id) => {
@@ -694,13 +1027,15 @@ const getCaregiverById = async (req, id) => {
     .populate('candidateId');
   if (account && ['Pending', 'Rejected'].includes(doc.status)) {
     const profile = await ensureCaregiverProfile(account);
+    const agency = await Model.AgencyModel.findById(agencyId).select('name phone');
     const prefill = buildPrefillFormData(
       doc.clientId,
       account,
-      null,
+      agency,
       doc.carePlanId,
       { serviceAreas: doc.serviceAreas || [] },
       profile?.candidate || null,
+      profile?.formProfile || null,
     );
     const nextCaregiverInfo = fillBlankCaregiverInfo(
       doc.formData?.caregiverInfo,
@@ -711,14 +1046,21 @@ const getCaregiverById = async (req, id) => {
       email: doc.formData?.mobileEnrollment?.email || prefill.mobileEnrollment.email,
       mobileNumber: doc.formData?.mobileEnrollment?.mobileNumber || prefill.mobileEnrollment.mobileNumber,
     };
+    const nextServiceInfo = fillBlankCaregiverInfo(
+      doc.formData?.serviceInfo,
+      prefill.serviceInfo,
+    );
     const changed = JSON.stringify(doc.formData?.caregiverInfo || {}) !== JSON.stringify(nextCaregiverInfo)
-      || JSON.stringify(doc.formData?.mobileEnrollment || {}) !== JSON.stringify(nextMobile);
+      || JSON.stringify(doc.formData?.mobileEnrollment || {}) !== JSON.stringify(nextMobile)
+      || JSON.stringify(doc.formData?.serviceInfo || {}) !== JSON.stringify(nextServiceInfo);
     if (changed) {
       doc.formData = {
         ...doc.formData,
         caregiverInfo: nextCaregiverInfo,
         mobileEnrollment: nextMobile,
+        serviceInfo: nextServiceInfo,
       };
+      doc.markModified('formData');
       await doc.save();
     }
   }

@@ -186,21 +186,66 @@ const getById = async (req, id) => {
   if (!doc) throw new Error(constants.MESSAGE.CARE_PLAN.NOT_FOUND);
   const plan = formatCarePlan(doc, doc.clientId, req);
 
-  if (doc.assessmentId && plan.client) {
+  if (doc.assessmentId) {
     const assessment = await Model.ClientAssessmentModel.findOne({ _id: doc.assessmentId, agencyId }).lean();
-    const physician = assessment?.formData?.physicianInfo || {};
-    const insurance = assessment?.formData?.insurance || {};
-    const c = plan.client;
-    plan.client = {
-      ...c,
-      physicianName: c.physicianName || physician.primaryPhysician || '',
-      physicianPhone: c.physicianPhone || physician.primaryPhysicianPhone || '',
-      pharmacyName: c.pharmacyName || physician.pharmacy || '',
-      pharmacyPhone: c.pharmacyPhone || physician.pharmacyPhone || '',
-      preferredHospital: c.preferredHospital || physician.preferredHospital || '',
-      insuranceProvider: c.insuranceProvider || (insurance.types || []).join(', '),
-      insuranceMemberId: c.insuranceMemberId || insurance.policyNumber || '',
-    };
+    if (assessment) {
+      if (plan.client) {
+        const physician = assessment.formData?.physicianInfo || {};
+        const insurance = assessment.formData?.insurance || {};
+        const c = plan.client;
+        plan.client = {
+          ...c,
+          physicianName: c.physicianName || physician.primaryPhysician || '',
+          physicianPhone: c.physicianPhone || physician.primaryPhysicianPhone || '',
+          pharmacyName: c.pharmacyName || physician.pharmacy || '',
+          pharmacyPhone: c.pharmacyPhone || physician.pharmacyPhone || '',
+          preferredHospital: c.preferredHospital || physician.preferredHospital || '',
+          insuranceProvider: c.insuranceProvider || (insurance.types || []).join(', '),
+          insuranceMemberId: c.insuranceMemberId || insurance.policyNumber || '',
+        };
+      }
+
+      // Backfill care-plan assessor from the assessment author when still blank.
+      const formData = plan.formData || {};
+      const assessor = formData.assessor || {};
+      const form110 = assessment.formData?.forms?.['110'] || {};
+      let creatorPhone = '';
+      let creatorEmail = '';
+      if (assessment.createdByAccountId && (!assessor.phone || !assessor.email)) {
+        const creator = await Model.AgencyAccountModel.findById(assessment.createdByAccountId)
+          .select('phone email')
+          .lean();
+        creatorPhone = creator?.phone || '';
+        creatorEmail = creator?.email || '';
+      }
+      const seedAssessor = {
+        name: assessment.assessorName || form110.assessorPrintName || '',
+        title: assessment.assessorTitle || '',
+        photo: assessment.assessorPhoto || '',
+        dateAssessed: assessment.assessmentDate
+          || form110.assessorDate
+          || form110.date
+          || new Date().toISOString().split('T')[0],
+        phone: creatorPhone,
+        email: creatorEmail,
+      };
+      const nextAssessor = { ...assessor };
+      let assessorChanged = false;
+      Object.entries(seedAssessor).forEach(([key, value]) => {
+        if (value && !nextAssessor[key]) {
+          nextAssessor[key] = value;
+          assessorChanged = true;
+        }
+      });
+      if (assessorChanged) {
+        plan.formData = { ...formData, assessor: nextAssessor };
+        doc.formData = {
+          ...(doc.formData?.toObject?.() || doc.formData || {}),
+          assessor: nextAssessor,
+        };
+        await doc.save();
+      }
+    }
   }
 
   return plan;

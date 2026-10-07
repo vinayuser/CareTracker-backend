@@ -23,14 +23,20 @@ const DEFAULT_HORIZON_DAYS = 42;
 const LATE_EXTRA_MS = LATE_CHECK_IN_EXTRA_MINUTES * 60 * 1000;
 const { getBlockingHolidayMap, leaveFieldsForDate } = require('./holidayLeaveVisits.service');
 const NotificationService = require('../common/notification.service');
+const { sendScheduleAssignedEmail } = require('../common/mail.service');
 
 const emitScheduleCreatedNotification = ({
   agencyId,
   clientName,
   caregiverName,
+  caregiverAccountId,
+  caregiverEmail,
   generatedVisits,
   scheduleId,
   scheduleCode,
+  startTime,
+  endTime,
+  dateRangeLabel,
 }) => {
   NotificationService.emit(async () => {
     const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
@@ -53,6 +59,38 @@ const emitScheduleCreatedNotification = ({
       body: `${agencyName}: ${generatedVisits} visit(s) for ${clientName}.`,
       actionUrl: '/admin/schedules',
     });
+
+    if (caregiverAccountId) {
+      await NotificationService.notifyAccount(caregiverAccountId, {
+        type: NotificationService.TYPES.SCHEDULE_CREATED,
+        category: 'schedule',
+        title: 'New visits scheduled',
+        body: `${generatedVisits} visit(s) scheduled for you with ${clientName || 'a client'}.`,
+        tone: 'info',
+        actionUrl: '/caregiver/schedule',
+        entityType: 'VisitSchedule',
+        entityId: scheduleId,
+        metadata: { scheduleCode, clientName, visitCount: generatedVisits },
+      });
+    }
+
+    if (caregiverEmail) {
+      try {
+        await sendScheduleAssignedEmail({
+          to: caregiverEmail,
+          caregiverName: caregiverName || 'Caregiver',
+          agencyName,
+          clientName,
+          visitCount: generatedVisits,
+          scheduleUrl: `${functions.getFrontendUrl()}/caregiver/schedule`,
+          startTime,
+          endTime,
+          dateRangeLabel,
+        });
+      } catch (err) {
+        console.error('[schedule] caregiver assignment email failed', err.message);
+      }
+    }
   });
 };
 
@@ -779,9 +817,16 @@ const createSchedule = async (req, payload) => {
         agencyId,
         clientName,
         caregiverName,
+        caregiverAccountId: caregiver._id,
+        caregiverEmail: caregiver.email || '',
         generatedVisits,
         scheduleId: schedules[0]?.id || schedules[0]?._id,
         scheduleCode: schedules[0]?.scheduleCode,
+        startTime: payload.start_time,
+        endTime: payload.end_time,
+        dateRangeLabel: dateKeys.length === 1
+          ? dateKeys[0]
+          : `${dateKeys[0]} – ${dateKeys[dateKeys.length - 1]}`,
       });
       return fallbackResult;
     }
@@ -830,9 +875,16 @@ const createSchedule = async (req, payload) => {
     agencyId,
     clientName,
     caregiverName,
+    caregiverAccountId: caregiver._id,
+    caregiverEmail: caregiver.email || '',
     generatedVisits,
     scheduleId: createdSchedules[0]?._id,
     scheduleCode: schedules[0]?.scheduleCode,
+    startTime: payload.start_time,
+    endTime: payload.end_time,
+    dateRangeLabel: dateKeys.length === 1
+      ? dateKeys[0]
+      : `${dateKeys[0]} – ${dateKeys[dateKeys.length - 1]}`,
   });
 
   return result;
@@ -1519,6 +1571,14 @@ const checkInVisit = async (req, visitId, payload = {}) => {
     }];
   }
   await visit.save();
+
+  emitVisitClockNotification({
+    agencyId,
+    visit,
+    event: 'checkin',
+    late,
+  });
+
   return formatVisit(visit, { now });
 };
 
@@ -1581,30 +1641,76 @@ const checkOutVisit = async (req, visitId, payload = {}) => {
   visit.approvalNotes = '';
   await visit.save();
 
-  NotificationService.emit(async () => {
-    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
-    const agencyName = agency?.name || 'Agency';
-    const payload = {
-      type: NotificationService.TYPES.EVV_VISIT_CHECKOUT,
-      category: 'compliance',
-      title: 'Visit checkout pending approval',
-      body: `${visit.caregiverName || 'Caregiver'} checked out visit ${visit.visitCode || ''} for ${visit.clientName || 'client'}.`,
-      tone: 'warning',
-      actionUrl: '/agency/evv/logs',
-      entityType: 'Visit',
-      entityId: visit._id,
-      metadata: { visitCode: visit.visitCode, clientName: visit.clientName },
-    };
-    await NotificationService.notifyAgency(agencyId, payload, { moduleKey: 'AGENCY_EVV_LOGS' });
-    await NotificationService.notifyPlatformAdmins({
-      ...payload,
-      title: `Visit checkout — ${agencyName}`,
-      body: `${agencyName}: ${visit.caregiverName} checked out ${visit.visitCode} for ${visit.clientName}.`,
-      actionUrl: '/admin/evv-compliance',
-    });
+  emitVisitClockNotification({
+    agencyId,
+    visit,
+    event: 'checkout',
   });
 
   return formatVisit(visit, { now });
+};
+
+/** In-app notify agency (owners + EVV staff) on caregiver clock-in / clock-out. */
+const emitVisitClockNotification = ({ agencyId, visit, event, late = false }) => {
+  if (!agencyId || !visit) return;
+
+  NotificationService.emit(async () => {
+    const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+    const agencyName = agency?.name || 'Agency';
+    const caregiverName = visit.caregiverName || 'Caregiver';
+    const clientName = visit.clientName || 'client';
+    const visitCode = visit.visitCode || '';
+    const service = visit.serviceArea || '';
+    const isCheckIn = event === 'checkin';
+
+    const payload = isCheckIn
+      ? {
+        type: NotificationService.TYPES.EVV_VISIT_CHECKIN,
+        category: 'compliance',
+        title: late ? 'Caregiver clocked in late' : 'Caregiver clocked in',
+        body: late
+          ? `${caregiverName} clocked in late for ${clientName}${visitCode ? ` (${visitCode})` : ''}${service ? ` · ${service}` : ''}.`
+          : `${caregiverName} clocked in for ${clientName}${visitCode ? ` (${visitCode})` : ''}${service ? ` · ${service}` : ''}.`,
+        tone: late ? 'warning' : 'info',
+        actionUrl: '/agency/evv/logs',
+        entityType: 'Visit',
+        entityId: visit._id,
+        metadata: {
+          visitCode,
+          clientName,
+          caregiverName,
+          late: Boolean(late),
+          event: 'checkin',
+        },
+      }
+      : {
+        type: NotificationService.TYPES.EVV_VISIT_CHECKOUT,
+        category: 'compliance',
+        title: 'Visit checkout pending approval',
+        body: `${caregiverName} checked out visit${visitCode ? ` ${visitCode}` : ''} for ${clientName}${service ? ` · ${service}` : ''}.`,
+        tone: 'warning',
+        actionUrl: '/agency/evv/logs',
+        entityType: 'Visit',
+        entityId: visit._id,
+        metadata: {
+          visitCode,
+          clientName,
+          caregiverName,
+          event: 'checkout',
+        },
+      };
+
+    // Notify all agency owners + HR (no module filter — clock events are operational)
+    await NotificationService.notifyAgency(agencyId, payload);
+    await NotificationService.notifyPlatformAdmins({
+      ...payload,
+      title: isCheckIn
+        ? `${late ? 'Late clock-in' : 'Clock-in'} — ${agencyName}`
+        : `Visit checkout — ${agencyName}`,
+      body: `${agencyName}: ${payload.body}`,
+      actionUrl: '/admin/evv-compliance',
+    });
+  });
 };
 
 const getActiveVisitForCaregiver = async (req) => {
@@ -2534,6 +2640,32 @@ const visitMinutes = (visit) => {
   return 0;
 };
 
+/** Minutes already worked (pay / EVV) — completed or in-progress only. */
+const workedVisitMinutes = (visit) => {
+  if (visit.status === 'Cancelled') return 0;
+  if (visit.checkInAt && visit.checkOutAt) return visitMinutes(visit);
+  if (['InProgress', 'Exception'].includes(visit.status) && visit.checkInAt && !visit.checkOutAt) {
+    const ms = Date.now() - new Date(visit.checkInAt).getTime();
+    return ms > 0 ? ms / 60000 : 0;
+  }
+  return 0;
+};
+
+/**
+ * Minutes for weekly overview / hours KPI: prefer actual worked time, otherwise
+ * scheduled duration so scheduled (not-yet-clocked) visits still show on the week chart.
+ */
+const overviewVisitMinutes = (visit) => {
+  if (visit.status === 'Cancelled') return 0;
+  const worked = workedVisitMinutes(visit);
+  if (worked > 0) return worked;
+  if (visit.scheduledStartAt && visit.scheduledEndAt) {
+    const ms = new Date(visit.scheduledEndAt) - new Date(visit.scheduledStartAt);
+    return ms > 0 ? ms / 60000 : 0;
+  }
+  return 0;
+};
+
 const displayVisitStatus = (visit) => {
   if (visit.checkOutAt) {
     const approval = visit.approvalStatus || 'Pending';
@@ -2587,16 +2719,15 @@ const getCaregiverDashboard = async (req) => {
   const todayInProgress = todayVisits.filter((v) => ['InProgress', 'Exception'].includes(v.status) && v.checkInAt && !v.checkOutAt);
   const todayUpcoming = todayVisits.filter((v) => ['Scheduled', 'Late', 'Missed'].includes(v.status) && !v.checkInAt).length;
 
-  const weekMinutesWorked = weekVisits.reduce((sum, v) => {
-    if (v.checkInAt && v.checkOutAt) return sum + visitMinutes(v);
-    if (['InProgress', 'Exception'].includes(v.status) && v.checkInAt && !v.checkOutAt) {
-      const ms = Date.now() - new Date(v.checkInAt).getTime();
-      return sum + (ms > 0 ? ms / 60000 : 0);
-    }
-    return sum;
-  }, 0);
+  const weekActiveVisits = weekVisits.filter((v) => v.status !== 'Cancelled');
+  const weekInProgress = weekActiveVisits.filter((v) => ['InProgress', 'Exception'].includes(v.status) && v.checkInAt && !v.checkOutAt);
+  const weekUpcoming = weekActiveVisits.filter((v) => ['Scheduled', 'Late', 'Missed'].includes(v.status) && !v.checkInAt).length;
+
+  const weekMinutesWorked = weekVisits.reduce((sum, v) => sum + workedVisitMinutes(v), 0);
+  const weekMinutesScheduled = weekVisits.reduce((sum, v) => sum + overviewVisitMinutes(v), 0);
 
   const goalHours = 40;
+  // Hours This Week KPI = time actually worked (clocked), not remaining scheduled load
   const hoursCurrent = weekMinutesWorked / 60;
   const hoursPercent = Math.min(100, Math.round((hoursCurrent / goalHours) * 100));
 
@@ -2617,10 +2748,17 @@ const getCaregiverDashboard = async (req) => {
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const weeklyHours = dayLabels.map((day, idx) => {
     const key = addDaysToDateKey(weekFrom, idx);
-    const mins = weekVisits
-      .filter((v) => v.scheduledDate === key)
-      .reduce((sum, v) => sum + (v.checkInAt && v.checkOutAt ? visitMinutes(v) : 0), 0);
-    return { day, hours: Number((mins / 60).toFixed(2)), date: key };
+    const dayVisits = weekVisits.filter((v) => v.scheduledDate === key);
+    const workedMins = dayVisits.reduce((sum, v) => sum + workedVisitMinutes(v), 0);
+    const scheduledMins = dayVisits.reduce((sum, v) => sum + overviewVisitMinutes(v), 0);
+    return {
+      day,
+      hours: Number((workedMins / 60).toFixed(2)),
+      scheduled_hours: Number((scheduledMins / 60).toFixed(2)),
+      date: key,
+      visits: dayVisits.length,
+      completed: dayVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length,
+    };
   });
 
   const active = todayInProgress[0] || weekVisits.find((v) => ['InProgress', 'Exception'].includes(v.status) && v.checkInAt && !v.checkOutAt) || null;
@@ -2721,7 +2859,7 @@ const getCaregiverDashboard = async (req) => {
     || `${caregiver.firstName || ''} ${caregiver.lastName || ''}`.trim()
     || 'Caregiver';
 
-  const weekCompleted = weekVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length;
+  const weekCompleted = weekActiveVisits.filter((v) => v.status === 'Completed' || (v.checkOutAt && v.status === 'Exception')).length;
 
   return {
     caregiver_name: caregiverName,
@@ -2732,9 +2870,18 @@ const getCaregiverDashboard = async (req) => {
         upcoming: todayUpcoming,
         in_progress: todayInProgress.length,
       },
+      week_visits: {
+        total: weekActiveVisits.length,
+        completed: weekCompleted,
+        upcoming: weekUpcoming,
+        in_progress: weekInProgress.length,
+        today_total: todayVisits.length,
+      },
       hours_this_week: {
         current: formatDurationLabel(weekMinutesWorked),
         current_hours: Number(hoursCurrent.toFixed(2)),
+        scheduled: formatDurationLabel(weekMinutesScheduled),
+        scheduled_hours: Number((weekMinutesScheduled / 60).toFixed(2)),
         goal: `${goalHours}h`,
         goal_hours: goalHours,
         percent: hoursPercent,
@@ -2742,7 +2889,7 @@ const getCaregiverDashboard = async (req) => {
       upcoming_pay: {
         amount: `$${estimatedPay.toFixed(2)}`,
         pay_date: 'Est. from hours',
-        note: `Based on ${formatDurationLabel(weekMinutesWorked)} @ $${hourlyRate}/hr`,
+        note: `Based on ${formatDurationLabel(weekMinutesWorked)} worked @ $${hourlyRate}/hr`,
       },
       evv_compliance: {
         percent: compliancePct,
@@ -2761,10 +2908,12 @@ const getCaregiverDashboard = async (req) => {
     recent_visits,
     active_clock: activeClock || { clocked_in: false },
     alerts: alerts.slice(0, 6),
+    week: { from: weekFrom, to: weekTo, timezone: displayTz },
     weekly_hours: weeklyHours,
     weekly_summary: {
       total_hours: formatDurationLabel(weekMinutesWorked),
-      total_visits: weekVisits.length,
+      scheduled_hours: formatDurationLabel(weekMinutesScheduled),
+      total_visits: weekVisits.filter((v) => v.status !== 'Cancelled').length,
       completed_visits: weekCompleted,
     },
     enrollment: {

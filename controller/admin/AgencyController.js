@@ -2,6 +2,7 @@ const constants = require('../../common/constants');
 const Validation = require('../../validation');
 const { AgencyService } = require('../../services');
 const AgencyRecordsService = require('../../services/admin/agencyRecords.service');
+const AgencyActivityService = require('../../services/admin/agencyActivity.service');
 
 module.exports.getAll = async (req, res, next) => {
   try {
@@ -33,6 +34,15 @@ module.exports.getById = async (req, res, next) => {
 module.exports.getCaregivers = async (req, res, next) => {
   try {
     const data = await AgencyService.getCaregivers(req.params.id, req.query);
+    return res.success(constants.MESSAGE.LIST, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getActivity = async (req, res, next) => {
+  try {
+    const data = await AgencyActivityService.getActivity(req.params.id, req.query);
     return res.success(constants.MESSAGE.LIST, data);
   } catch (error) {
     next(error);

@@ -4,8 +4,13 @@ const functions = require('../../common/functions');
 const fs = require('fs');
 const path = require('path');
 const { buildEmptyFormData, getFormSchema, hasPdfForm } = require('../../common/hiringFormSchemas');
-const { sendCandidateStageFormsEmail, sendCandidateFormResetEmail } = require('../common/mail.service');
+const {
+  sendCandidateStageFormsEmail,
+  sendCandidateFormResetEmail,
+  sendHiringFormSubmittedEmail,
+} = require('../common/mail.service');
 const NotificationService = require('../common/notification.service');
+const { getAgencyContext, uniqueEmails, agencyPortalUrl } = require('../common/notifyHelpers');
 const { getAgencyId } = require('./jobPost.service');
 
 const TOKEN_TTL_DAYS = 30;
@@ -94,6 +99,95 @@ const expireActiveAccessForApplication = async (applicationId, exceptAccessId = 
   const filter = { applicationId, status: 'Active' };
   if (exceptAccessId) filter._id = { $ne: exceptAccessId };
   await Model.CandidateStageAccessModel.updateMany(filter, { status: 'Expired' });
+};
+
+/** Dashboard notification + email to agency whenever a candidate submits a pipeline form. */
+const notifyHiringFormSubmitted = async ({
+  agencyId,
+  applicationId,
+  candidateName,
+  jobTitle,
+  stageName,
+  documentName,
+  documentCode,
+  req,
+}) => {
+  const reviewUrl = agencyPortalUrl(req, '/agency/hr/hiring-pipeline');
+  const formLabel = documentName || documentCode || 'a hiring form';
+  const name = candidateName || 'A candidate';
+
+  NotificationService.emit(async () => {
+    await NotificationService.notifyAgency(agencyId, {
+      type: NotificationService.TYPES.HIRING_FORM_SUBMITTED,
+      category: 'hiring',
+      title: 'Hiring form submitted',
+      body: `${name} submitted ${formLabel}${stageName ? ` (${stageName})` : ''}.`,
+      tone: 'success',
+      actionUrl: '/agency/hr/hiring-pipeline',
+      actionLabel: 'View pipeline',
+      entityType: 'CandidateApplication',
+      entityId: applicationId,
+      metadata: {
+        candidateName: name,
+        jobTitle: jobTitle || '',
+        stageName: stageName || '',
+        documentName: formLabel,
+        documentCode: documentCode || '',
+      },
+    }, { moduleKey: 'AGENCY_HIRING_PIPELINE' });
+  });
+
+  try {
+    const { agencyName, ownerEmails, ownerName } = await getAgencyContext(agencyId);
+    const hrAccounts = await Model.AgencyAccountModel.find({
+      agencyId,
+      role: 'HR',
+      status: { $ne: 'Inactive' },
+      moduleAccess: 'AGENCY_HIRING_PIPELINE',
+    }).select('email').lean();
+    const emails = uniqueEmails([
+      ...ownerEmails,
+      ...hrAccounts.map((h) => h.email),
+    ]);
+
+    await Promise.all(emails.map(async (to) => {
+      try {
+        await sendHiringFormSubmittedEmail({
+          to,
+          recipientName: ownerName || agencyName || 'Agency',
+          agencyName,
+          candidateName: name,
+          jobTitle,
+          stageName,
+          documentName: formLabel,
+          documentCode,
+          reviewUrl,
+        });
+      } catch (err) {
+        console.error('[candidateForm] submit email failed', to, err.message);
+      }
+    }));
+  } catch (err) {
+    console.error('[candidateForm] submit notify emails failed', err.message);
+  }
+};
+
+const loadSubmitNotifyContext = async (access) => {
+  const [application, stage] = await Promise.all([
+    Model.CandidateApplicationModel.findById(access.applicationId)
+      .populate('candidateId')
+      .populate('jobPostId'),
+    Model.AgencyStageModel.findById(access.stageId).select('name'),
+  ]);
+  const candidate = application?.candidateId;
+  const job = application?.jobPostId;
+  return {
+    agencyId: access.agencyId || application?.agencyId,
+    applicationId: access.applicationId,
+    candidateName: `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim() || 'Candidate',
+    jobTitle: job?.jobTitle || '',
+    stageName: stage?.name || '',
+  };
 };
 
 const maybeCompleteStageAccess = async (accessId) => {
@@ -401,9 +495,29 @@ const getPortalByToken = async (token, req) => {
   };
 };
 
+const formatCandidatePrefill = (candidate) => {
+  if (!candidate) return null;
+  return {
+    first_name: candidate.firstName || '',
+    last_name: candidate.lastName || '',
+    email: candidate.email || '',
+    phone: candidate.phone || '',
+    designation: candidate.designation || '',
+    location: candidate.location || '',
+    country: candidate.country || '',
+    education: candidate.education || '',
+    date_of_birth: candidate.dateOfBirth
+      ? new Date(candidate.dateOfBirth).toISOString().slice(0, 10)
+      : '',
+  };
+};
+
 const getDocumentFormByToken = async (token, documentCode, req) => {
   const access = await resolveTokenAccess(token);
-  const stage = await Model.AgencyStageModel.findById(access.stageId);
+  const [stage, application] = await Promise.all([
+    Model.AgencyStageModel.findById(access.stageId),
+    Model.CandidateApplicationModel.findById(access.applicationId).populate('candidateId'),
+  ]);
   const documents = resolveIssuedDocuments(stage, access);
   const docMeta = documents.find((d) => d.code === documentCode);
   if (!docMeta) throw new Error(constants.MESSAGE.CANDIDATE_FORM.DOCUMENT_NOT_FOUND);
@@ -446,6 +560,7 @@ const getDocumentFormByToken = async (token, documentCode, req) => {
       ? functions.buildUploadUrl(submission.filledPdfPath, req)
       : null,
     read_only: submission.status === 'Submitted',
+    candidate: formatCandidatePrefill(application?.candidateId),
   };
 };
 
@@ -496,6 +611,19 @@ const submitPdfDocument = async (token, documentCode, formData, file, req) => {
   await submission.save();
 
   await maybeCompleteStageAccess(access._id);
+
+  const ctx = await loadSubmitNotifyContext(access);
+  setImmediate(() => {
+    notifyHiringFormSubmitted({
+      ...ctx,
+      documentName: submission.documentName,
+      documentCode,
+      req,
+    }).catch((err) => {
+      console.error('[candidateForm] submit notify failed', err.message);
+    });
+  });
+
   return formatSubmission(submission, req);
 };
 
@@ -547,6 +675,19 @@ const submitDocument = async (token, documentCode, formData, req) => {
   await submission.save();
 
   await maybeCompleteStageAccess(access._id);
+
+  const ctx = await loadSubmitNotifyContext(access);
+  setImmediate(() => {
+    notifyHiringFormSubmitted({
+      ...ctx,
+      documentName: submission.documentName,
+      documentCode,
+      req,
+    }).catch((err) => {
+      console.error('[candidateForm] submit notify failed', err.message);
+    });
+  });
+
   return formatSubmission(submission, req);
 };
 

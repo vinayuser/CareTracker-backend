@@ -116,10 +116,8 @@ const resolveNextStageFromContact = (payload = {}) => {
   if (payload.callStatus === 'cancel') return 'Contacted';
   if (payload.callStatus === 'needs_time') return 'Contacted';
   if (payload.callStatus !== 'move_next') return 'Contacted';
-  if (payload.nextLevel === 'Schedule Home Assessment') return 'Assessment Scheduled';
-  if (payload.nextLevel === 'Proposal Sent') return 'Proposal Sent';
-  if (payload.nextLevel === 'Converted') return 'Converted';
-  return 'Contacted';
+  // Contact step always advances one stage — Assessment Scheduled (no skipping to Proposal/Converted)
+  return 'Assessment Scheduled';
 };
 
 const mapLeadToAssessmentPayload = (lead, extras = {}) => {
@@ -534,9 +532,7 @@ const logContact = async (req, id, payload = {}) => {
     disqualified: payload.callStatus === 'cancel',
   };
 
-  let nextStage = resolveNextStageFromContact(payload);
-  // Converted via contact modal still needs convertToClient — keep Proposal Sent max here
-  if (nextStage === 'Converted') nextStage = 'Proposal Sent';
+  const nextStage = resolveNextStageFromContact(payload);
 
   let formData = {
     ...doc.formData,

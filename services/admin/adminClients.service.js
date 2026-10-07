@@ -215,8 +215,11 @@ const getClients = async (query = {}) => {
       agencyId: String(row.agencyId || ''),
       agencyName: agencyMap.get(String(row.agencyId)) || '—',
       phone: row.phone || '',
+      email: row.email || '',
+      dateOfBirth: row.dateOfBirth || '',
       status: row.status || 'Pending',
       profilePic: row.profilePicPath ? buildUploadUrl(row.profilePicPath) : '',
+      createdAt: row.createdAt || null,
       primaryCaregiver: caregiver?.caregiverName || '—',
       nextSchedule: next
         ? {
@@ -386,13 +389,30 @@ const getOverview = async (id, req) => {
 
   const current = inProgress || currentRow;
 
+  const address = [client.streetAddress, client.aptSuite, client.city, client.state, client.zipCode]
+    .filter(Boolean)
+    .join(', ');
+
   return {
     client: {
       id: String(client._id),
       name: fullName(client),
+      preferredName: client.preferredName || '',
       clientCode: client.clientCode || '',
+      agencyId: String(client.agencyId || ''),
       agencyName: agency?.name || '—',
+      email: client.email || '',
+      phone: client.phone || '',
+      phoneHome: client.phoneHome || '',
+      dateOfBirth: client.dateOfBirth || '',
+      gender: client.gender || '',
+      address,
       status: client.status || 'Pending',
+      profilePic: client.profilePicPath ? buildUploadUrl(client.profilePicPath, req) : '',
+      createdAt: client.createdAt || null,
+      emergencyContactName: client.emergencyContactName || '',
+      emergencyContactPhone: client.emergencyContactPhone || '',
+      emergencyContactRelationship: client.emergencyContactRelationship || '',
     },
     documents,
     upcoming: upcomingRows.map(formatVisit),
@@ -408,8 +428,46 @@ const getOverview = async (id, req) => {
   };
 };
 
+const updateStatus = async (id, status) => {
+  const client = await Model.ClientModel.findById(id);
+  if (!client) throw new Error('Client Not Found');
+
+  const next = String(status || '').trim();
+  if (!['Active', 'Inactive', 'Pending'].includes(next)) {
+    const err = new Error('Invalid status');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  client.status = next;
+  await client.save();
+
+  const account = await Model.AgencyAccountModel.findOne({ clientId: client._id, role: 'CLIENT' });
+  if (account) {
+    account.status = next;
+    if (next === 'Inactive') {
+      account.jti = functions.generateRandomStringAndNumbers(20);
+    }
+    await account.save();
+  }
+
+  const agency = await Model.AgencyModel.findById(client.agencyId).select('name').lean();
+  return {
+    id: String(client._id),
+    name: fullName(client),
+    clientCode: client.clientCode || '',
+    agencyId: String(client.agencyId || ''),
+    agencyName: agency?.name || '—',
+    phone: client.phone || '',
+    email: client.email || '',
+    status: client.status || 'Pending',
+    profilePic: client.profilePicPath ? buildUploadUrl(client.profilePicPath) : '',
+  };
+};
+
 module.exports = {
   getStats,
   getClients,
   getOverview,
+  updateStatus,
 };

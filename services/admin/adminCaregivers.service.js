@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { resolveProfilePicPath } = require('../../common/profilePicUpload');
+const { assertLoginIdentifiersAvailable } = require('../../common/emailAvailability');
 const { notArchivedFilter } = require('../../common/agencyVisibility');
 const { CARE_OVERVIEW_CATEGORIES } = require('../../common/carePlanConstants');
 
@@ -527,9 +529,64 @@ const updateStatus = async (id, status) => {
   };
 };
 
+const updateCaregiver = async (id, payload = {}, req) => {
+  const account = await Model.AgencyAccountModel.findOne({ _id: id, role: 'CAREGIVER' });
+  if (!account) throw new Error('Caregiver Not Found');
+
+  if (payload.status !== undefined && !['Active', 'Inactive', 'Pending'].includes(String(payload.status))) {
+    const err = new Error('Invalid status');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const nextEmail = payload.email !== undefined ? String(payload.email).toLowerCase().trim() : undefined;
+  const nextUserId = payload.userId !== undefined ? String(payload.userId).toLowerCase().trim() : undefined;
+  const emailChanged = nextEmail !== undefined && nextEmail !== String(account.email || '').toLowerCase();
+  const userIdChanged = nextUserId !== undefined && nextUserId !== String(account.userId || '').toLowerCase();
+  if (emailChanged || userIdChanged) {
+    await assertLoginIdentifiersAvailable({
+      email: nextEmail ?? account.email,
+      userId: nextUserId ?? account.userId,
+      exclude: {
+        accountId: account._id,
+        ...(account.candidateId ? { candidateId: account.candidateId } : {}),
+      },
+    });
+  }
+
+  if (payload.fullName !== undefined) account.fullName = String(payload.fullName).trim();
+  if (emailChanged) account.email = nextEmail;
+  if (userIdChanged) account.userId = nextUserId;
+  if (payload.phone !== undefined) account.phone = String(payload.phone || '').trim();
+  if (payload.employeeId !== undefined) account.employeeId = String(payload.employeeId || '').trim();
+  if (payload.dateOfBirth !== undefined) account.dateOfBirth = String(payload.dateOfBirth || '').trim();
+  if (payload.status !== undefined && payload.status !== account.status) {
+    account.status = payload.status;
+    if (payload.status === 'Inactive') {
+      account.jti = functions.generateRandomStringAndNumbers(20);
+    }
+  }
+
+  const nextPicPath = resolveProfilePicPath(payload.profilePic, 'caregivers');
+  if (nextPicPath !== null) {
+    account.profilePicPath = nextPicPath;
+    if (account.candidateId) {
+      await Model.CandidateModel.updateOne(
+        { _id: account.candidateId },
+        { $set: { profilePicPath: nextPicPath } },
+      );
+    }
+  }
+
+  await account.save();
+  const overview = await getOverview(account._id, req);
+  return overview.caregiver;
+};
+
 module.exports = {
   getStats,
   getCaregivers,
   getOverview,
   updateStatus,
+  updateCaregiver,
 };

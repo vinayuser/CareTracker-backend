@@ -28,6 +28,15 @@ module.exports.getOverview = async (req, res, next) => {
   }
 };
 
+module.exports.updateCaregiver = async (req, res, next) => {
+  try {
+    const data = await AdminCaregiversService.updateCaregiver(req.params.id, req.body || {}, req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.updateStatus = async (req, res, next) => {
   try {
     const status = req.body?.status;

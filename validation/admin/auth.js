@@ -15,6 +15,7 @@ module.exports = {
     employeeId: Joi.string().trim().allow('').max(80).optional(),
     jobTitle: Joi.string().trim().allow('').max(120).optional(),
     department: Joi.string().trim().allow('').max(120).optional(),
+    profilePic: Joi.string().allow('', null).optional(),
   }).min(1),
   changePassword: Joi.object({
     currentPassword: Joi.string().required(),

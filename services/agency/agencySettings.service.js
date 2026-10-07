@@ -45,11 +45,6 @@ const updateSettings = async (req, payload = {}) => {
   const agency = await Model.AgencyModel.findById(agencyId);
   if (!agency) throw new Error('Agency not found');
 
-  if (payload.email !== undefined) {
-    const email = trim(payload.email).toLowerCase();
-    if (!email) throw new Error('Agency email is required');
-    agency.email = email;
-  }
   if (payload.phone !== undefined) agency.phone = trim(payload.phone);
   if (payload.fax !== undefined) agency.fax = trim(payload.fax);
   if (payload.website !== undefined) agency.website = trim(payload.website);

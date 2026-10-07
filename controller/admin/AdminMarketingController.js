@@ -1,5 +1,15 @@
 const constants = require('../../common/constants');
 const MailchimpService = require('../../services/common/mailchimp.service');
+const AdminMarketingAudienceService = require('../../services/admin/adminMarketingAudience.service');
+
+module.exports.getPlatformAudience = async (req, res, next) => {
+  try {
+    const data = await AdminMarketingAudienceService.getPlatformAudience();
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports.getMailchimpStatus = async (req, res, next) => {
   try {

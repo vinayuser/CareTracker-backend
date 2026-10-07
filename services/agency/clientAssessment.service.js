@@ -312,15 +312,28 @@ const mapAssessmentToClientPayload = (formData = {}) => {
   };
 };
 
-/** Seed care-plan form sections from assessment physician / insurance / client info. */
-const mapAssessmentToCarePlanFormData = (formData = {}) => {
+/** Seed care-plan form sections from assessment (client/medical + same assessor who completed it). */
+const mapAssessmentToCarePlanFormData = (formData = {}, assessment = {}, req = null) => {
   const ci = formData.clientInfo || {};
   const contact = formData.contactInfo || {};
   const emergency = formData.emergencyInfo || {};
   const physician = formData.physicianInfo || {};
   const insurance = formData.insurance || {};
+  const account = req ? getAgencyAccount(req) : null;
+  const form110 = formData.forms?.['110'] || formData['110'] || {};
 
   return {
+    assessor: {
+      name: assessment.assessorName || form110.assessorPrintName || '',
+      title: assessment.assessorTitle || 'Care Assessment Specialist',
+      photo: assessment.assessorPhoto || '',
+      dateAssessed: assessment.assessmentDate
+        || form110.assessorDate
+        || form110.date
+        || new Date().toISOString().split('T')[0],
+      phone: account?.phone || '',
+      email: account?.email || (req ? getCreatorEmail(req) : '') || '',
+    },
     clientInfo: {
       clientName: ci.clientName || '',
       dob: ci.dob || '',
@@ -351,6 +364,15 @@ const mapAssessmentToCarePlanFormData = (formData = {}) => {
       policyId: insurance.policyNumber || '',
     },
   };
+};
+
+const fillBlankAssessor = (existing = {}, seed = {}) => {
+  const out = { ...(existing || {}) };
+  Object.entries(seed || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    if (!out[key]) out[key] = value;
+  });
+  return out;
 };
 
 const getOptions = () => assessmentConstants.getOptions();
@@ -582,10 +604,11 @@ const update = async (req, id, payload) => {
   if (payload.formData && doc.carePlanId) {
     const plan = await Model.CarePlanModel.findOne({ _id: doc.carePlanId, agencyId });
     if (plan && plan.quoteStatus !== 'Accepted') {
-      const seeded = mapAssessmentToCarePlanFormData(payload.formData);
+      const seeded = mapAssessmentToCarePlanFormData(payload.formData, doc, req);
       const existing = plan.formData?.toObject?.() || plan.formData || {};
       plan.formData = {
         ...existing,
+        assessor: fillBlankAssessor(existing.assessor, seeded.assessor),
         clientInfo: { ...(existing.clientInfo || {}), ...seeded.clientInfo },
         medicalInfo: { ...(existing.medicalInfo || {}), ...seeded.medicalInfo },
         supplementary: { ...(existing.supplementary || {}), ...seeded.supplementary },
@@ -619,7 +642,7 @@ const generateQuote = async (req, id, pricing) => {
   const hourlyRate = pricing.hourlyRate ?? 0;
   const quotedMonthlyPrice = pricing.quotedMonthlyPrice ?? Math.round(weeklyHours * hourlyRate * 4.33 * 100) / 100;
 
-  const seededForm = mapAssessmentToCarePlanFormData(formData);
+  const seededForm = mapAssessmentToCarePlanFormData(formData, assessment, req);
 
   const plan = await Model.CarePlanModel.create({
     agencyId,
@@ -695,6 +718,45 @@ const updateQuote = async (req, id, pricing) => {
   };
 };
 
+/** Prefer an already-onboarded client (assessment / lead / same-agency email) over creating a duplicate. */
+const resolveClientForOnboard = async (req, assessment) => {
+  const agencyId = getAgencyId(req);
+  const payload = mapAssessmentToClientPayload(assessment.formData);
+
+  const activateAndFormat = async (doc) => {
+    if (doc.status !== 'Active') {
+      doc.status = 'Active';
+      await doc.save();
+    }
+    return formatClient(doc, req);
+  };
+
+  if (assessment.clientId) {
+    const linked = await Model.ClientModel.findOne({ _id: assessment.clientId, agencyId });
+    if (linked) return activateAndFormat(linked);
+  }
+
+  const leadId = assessment.formData?.leadMeta?.leadId;
+  if (leadId) {
+    const lead = await Model.LeadModel.findOne({ _id: leadId, agencyId }).select('clientId');
+    if (lead?.clientId) {
+      const fromLead = await Model.ClientModel.findOne({ _id: lead.clientId, agencyId });
+      if (fromLead) return activateAndFormat(fromLead);
+    }
+  }
+
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (email) {
+    const byEmail = await Model.ClientModel.findOne({
+      agencyId,
+      email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+    });
+    if (byEmail) return activateAndFormat(byEmail);
+  }
+
+  return createClient(req, payload);
+};
+
 const acceptQuote = async (req, id) => {
   const agencyId = getAgencyId(req);
   const assessment = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId });
@@ -708,8 +770,8 @@ const acceptQuote = async (req, id) => {
   const { archiveCurrentVersion } = require('./carePlan.service');
   await archiveCurrentVersion(req, plan);
 
-  const client = await createClient(req, mapAssessmentToClientPayload(assessment.formData));
-  const seededForm = mapAssessmentToCarePlanFormData(assessment.formData);
+  const client = await resolveClientForOnboard(req, assessment);
+  const seededForm = mapAssessmentToCarePlanFormData(assessment.formData, assessment, req);
   const existingForm = plan.formData?.toObject?.() || plan.formData || {};
 
   plan.clientId = client.id;
@@ -718,6 +780,7 @@ const acceptQuote = async (req, id) => {
   plan.agreementDate = new Date().toISOString().split('T')[0];
   plan.formData = {
     ...existingForm,
+    assessor: fillBlankAssessor(existingForm.assessor, seededForm.assessor),
     clientInfo: {
       ...(existingForm.clientInfo || {}),
       ...seededForm.clientInfo,

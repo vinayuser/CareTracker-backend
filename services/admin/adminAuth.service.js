@@ -13,10 +13,12 @@ const {
   DEFAULT_HR_MODULES,
 } = require('../../common/agencyModules');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 const { isAgencyLoginBlocked } = require('../../common/agencyVisibility');
 const {
   assertEmailGloballyAvailable,
   assertLoginIdentifiersAvailable,
+  assertUserIdAvailable,
 } = require('../../common/emailAvailability');
 const { sendPasswordResetEmail } = require('../common/mail.service');
 
@@ -69,7 +71,15 @@ const formatAgencyUser = async (account) => {
     status: account.status || 'Active',
     jobTitle: '',
     department: '',
+    profilePic: account.profilePicPath ? buildUploadUrl(account.profilePicPath) : '',
   };
+
+  if (role === 'CAREGIVER' && !user.profilePic && account.candidateId) {
+    const candidate = await Model.CandidateModel
+      .findById(account.candidateId._id || account.candidateId)
+      .select('profilePicPath');
+    if (candidate?.profilePicPath) user.profilePic = buildUploadUrl(candidate.profilePicPath);
+  }
 
   if (role === 'HR') {
     const hrStaff = await Model.HrStaffModel.findOne({ accountId: account._id });
@@ -215,13 +225,21 @@ const checkLoginIdAvailability = async (req) => {
     throw new Error('Username cannot be an email address');
   }
 
-  await assertLoginIdentifiersAvailable({
-    email: account.email,
-    userId,
-    exclude: { accountId: account._id },
-  });
+  await assertUserIdAvailable(userId, account._id);
 
   return { available: true };
+};
+
+/** Exclusions so an account's own linked candidate / client / HR profile isn't treated as a clash. */
+const ownProfileExclusions = async (account) => {
+  const exclude = { accountId: account._id };
+  if (account.candidateId) exclude.candidateId = account.candidateId._id || account.candidateId;
+  if (account.clientId) exclude.clientId = account.clientId._id || account.clientId;
+  if (account.role === 'HR') {
+    const hr = await Model.HrStaffModel.findOne({ accountId: account._id }).select('_id');
+    if (hr) exclude.hrStaffId = hr._id;
+  }
+  return exclude;
 };
 
 const updateProfile = async (req, payload = {}) => {
@@ -248,12 +266,35 @@ const updateProfile = async (req, payload = {}) => {
     throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
   }
 
-  if (payload.email !== undefined || payload.userId !== undefined) {
+  // Caregivers / clients cannot change email from self-service profile
+  if ((account.role === 'CAREGIVER' || account.role === 'CLIENT') && payload.email !== undefined) {
+    delete payload.email;
+  }
+
+  if (payload.userId !== undefined) {
+    const nextUserId = String(payload.userId).trim().toLowerCase();
+    if (nextUserId.includes('@')) {
+      throw new Error('Username cannot be an email address');
+    }
+  }
+
+  const currentEmail = String(account.email || '').trim().toLowerCase();
+  if (payload.email !== undefined && String(payload.email).trim().toLowerCase() === currentEmail) {
+    delete payload.email;
+  }
+  const currentUserId = String(account.userId || '').trim().toLowerCase();
+  if (payload.userId !== undefined && String(payload.userId).trim().toLowerCase() === currentUserId) {
+    delete payload.userId;
+  }
+
+  if (payload.email !== undefined) {
     await assertLoginIdentifiersAvailable({
-      email: payload.email !== undefined ? payload.email : account.email,
+      email: payload.email,
       userId: payload.userId !== undefined ? payload.userId : account.userId,
-      exclude: { accountId: account._id },
+      exclude: await ownProfileExclusions(account),
     });
+  } else if (payload.userId !== undefined) {
+    await assertUserIdAvailable(payload.userId, account._id);
   }
   if (payload.email !== undefined) {
     account.email = String(payload.email).trim().toLowerCase();
@@ -272,6 +313,19 @@ const updateProfile = async (req, payload = {}) => {
   }
   if (payload.userId !== undefined) {
     account.userId = String(payload.userId).trim().toLowerCase();
+  }
+  if (account.role === 'CAREGIVER') {
+    const nextPicPath = resolveProfilePicPath(payload.profilePic, 'caregivers');
+    if (nextPicPath !== null) {
+      account.profilePicPath = nextPicPath;
+      const candidateId = account.candidateId?._id || account.candidateId;
+      if (candidateId) {
+        await Model.CandidateModel.updateOne(
+          { _id: candidateId },
+          { $set: { profilePicPath: nextPicPath } },
+        );
+      }
+    }
   }
 
   await account.save();
