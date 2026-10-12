@@ -1436,6 +1436,143 @@ const sendPasswordResetEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+const assignmentDetailsHtml = ({
+  agencyName,
+  clientName,
+  caregiverName,
+  statusLabel,
+  statusValue,
+  extraRows = [],
+}) => `
+  <p style="margin:0 0 8px;font-weight:700;color:#0f172a;">Assignment Details</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+    <tr><td style="padding:10px 12px;background:#f8fafc;font-size:13px;color:#64748b;width:42%;">Agency Name</td><td style="padding:10px 12px;font-size:13px;color:#0f172a;font-weight:600;">${escapeHtml(agencyName || '—')}</td></tr>
+    <tr><td style="padding:10px 12px;background:#fff;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Client Name</td><td style="padding:10px 12px;font-size:13px;color:#0f172a;font-weight:600;border-top:1px solid #e2e8f0;">${escapeHtml(clientName || '—')}</td></tr>
+    <tr><td style="padding:10px 12px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Caregiver Name</td><td style="padding:10px 12px;font-size:13px;color:#0f172a;font-weight:600;border-top:1px solid #e2e8f0;">${escapeHtml(caregiverName || '—')}</td></tr>
+    <tr><td style="padding:10px 12px;background:#fff;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">${escapeHtml(statusLabel)}</td><td style="padding:10px 12px;font-size:13px;color:#0f172a;font-weight:600;border-top:1px solid #e2e8f0;">${escapeHtml(statusValue)}</td></tr>
+    ${extraRows.map((row) => `
+      <tr><td style="padding:10px 12px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">${escapeHtml(row.label)}</td><td style="padding:10px 12px;font-size:13px;color:#0f172a;font-weight:600;border-top:1px solid #e2e8f0;">${escapeHtml(row.value)}</td></tr>
+    `).join('')}
+  </table>
+`.trim();
+
+const reminderSignOff = (companyName) => `
+  <p style="margin:20px 0 0;">Regards,</p>
+  <p style="margin:4px 0 0;">Care Operations Team</p>
+  <p style="margin:4px 0 0;font-weight:600;">${escapeHtml(companyName || 'CareTraker')}</p>
+`.trim();
+
+/** Report pending reminders — agency / caregiver / client */
+const sendReportReminderEmail = async ({
+  type,
+  to,
+  agencyName,
+  agencyAdminName,
+  clientName,
+  caregiverName,
+  clientEvvStatus,
+  companyName,
+}) => {
+  const company = companyName || 'CareTraker';
+  const details = { agencyName, clientName, caregiverName };
+  let subject = 'CareTraker reminder';
+  let title = 'Action required';
+  let greeting = 'Hello';
+  let intro = '';
+  let action = '';
+  let statusLabel = 'Status';
+  let statusValue = 'Pending';
+  let extraRows = [];
+  let closing = '';
+
+  switch (String(type || '')) {
+    case 'care_plan':
+      subject = 'Reminder: Care plan pending';
+      title = 'Care plan pending';
+      greeting = `Dear ${agencyName || 'Agency'}`;
+      intro = 'This is a reminder that the care plan for the following caregiver assignment is pending creation or completion.';
+      statusLabel = 'Care Plan Status';
+      statusValue = 'Pending';
+      action = 'Please create or update the care plan and ensure that the status is updated in the system once completed.';
+      closing = 'Kindly complete this task at the earliest to avoid delays in the care delivery process.';
+      break;
+    case 'schedule':
+      subject = 'Reminder: Schedule pending';
+      title = 'Schedule pending';
+      greeting = `Dear ${agencyName || 'Agency'}`;
+      intro = 'The schedule for the following caregiver assignment has not yet been created in the system.';
+      statusLabel = 'Schedule Status';
+      statusValue = 'Pending';
+      action = "Please create and confirm the caregiver's schedule, including the required dates, working hours, and assignment details.";
+      closing = 'Once completed, please update the schedule status in the system.';
+      break;
+    case 'evv_form':
+      subject = 'Reminder: EVV form pending';
+      title = 'EVV form pending';
+      greeting = `Dear ${caregiverName || 'Caregiver'}`;
+      intro = 'Our system indicates that the EVV (Electronic Visit Verification) form for your assignment is pending creation or completion.';
+      statusLabel = 'EVV Form Status';
+      statusValue = 'Pending';
+      action = 'Please coordinate with your agency administrator and complete the required EVV form steps as soon as possible.';
+      closing = 'If the form has already been completed, please contact your agency administrator to update the status in the system.';
+      break;
+    case 'client_evv':
+      subject = 'Reminder: EVV verification pending';
+      title = 'Client EVV verification pending';
+      greeting = `Dear ${clientName || 'Client'}`;
+      intro = 'The EVV form associated with your caregiver assignment is awaiting your verification.';
+      statusLabel = 'Client Verification Status';
+      statusValue = 'Pending';
+      action = 'Please review the EVV details and verify the form through the portal.';
+      closing = 'If any information appears incorrect, please contact your agency representative before approving the form. Your timely response will help ensure that the verification process is completed without unnecessary delays.';
+      break;
+    case 'agency_evv':
+      subject = 'Reminder: Agency EVV verification pending';
+      title = 'Agency EVV verification pending';
+      greeting = `Dear ${agencyAdminName || agencyName || 'Agency Admin'}`;
+      intro = 'The following caregiver assignment is awaiting agency-side EVV verification.';
+      statusLabel = 'Agency EVV Status';
+      statusValue = 'Pending';
+      extraRows = [{ label: 'Client EVV Status', value: clientEvvStatus || 'Approved' }];
+      action = 'Please review the EVV form and verify the information. If corrections are required, return the form to the appropriate party with the necessary instructions.';
+      closing = 'Once the review is complete, please update the agency EVV status in the portal.';
+      break;
+    default:
+      throw new Error('Invalid reminder email type');
+  }
+
+  const html = wrapEmail(title, `
+    <p style="margin:0 0 12px;">${escapeHtml(greeting)},</p>
+    <p style="margin:0 0 16px;">${escapeHtml(intro)}</p>
+    ${assignmentDetailsHtml({ ...details, statusLabel, statusValue, extraRows })}
+    <p style="margin:0 0 8px;"><strong>Action Required:</strong> ${escapeHtml(action)}</p>
+    ${closing ? `<p style="margin:0 0 16px;">${escapeHtml(closing)}</p>` : ''}
+    ${reminderSignOff(company)}
+  `);
+
+  const text = [
+    `${greeting},`,
+    '',
+    intro,
+    '',
+    'Assignment Details',
+    `Agency Name: ${agencyName || '—'}`,
+    `Client Name: ${clientName || '—'}`,
+    `Caregiver Name: ${caregiverName || '—'}`,
+    `${statusLabel}: ${statusValue}`,
+    ...extraRows.map((row) => `${row.label}: ${row.value}`),
+    '',
+    `Action Required: ${action}`,
+    closing,
+    '',
+    'Regards,',
+    'Care Operations Team',
+    company,
+  ].filter((line) => line !== undefined && line !== null).join('\n');
+
+  return sendMail({ to, subject, html, text });
+};
+
 module.exports = {
   sendMail,
   sendCandidateApplicationEmail,
@@ -1465,5 +1602,6 @@ module.exports = {
   sendCarePlanUpdatedEmail,
   sendScheduleAssignedEmail,
   sendPasswordResetEmail,
+  sendReportReminderEmail,
   isConfigured,
 };

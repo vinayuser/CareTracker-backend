@@ -140,6 +140,7 @@ router.post('/admin/marketing/campaigns/send', Auth.authenticate('super_admin'),
 
 router.get('/admin/reports/evv-summary/options', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOptions);
 router.get('/admin/reports/evv-summary/export', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.exportCsv);
+router.post('/admin/reports/evv-summary/reminder', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.sendReminder);
 router.get('/admin/reports/evv-summary', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getList);
 
 router.get('/admin/time-cards/options', Auth.authenticate('super_admin'), Controller.AdminTimeCardController.getOptions);
@@ -337,6 +338,7 @@ router.post('/agency/invoices/:id/void', Auth.authenticate('agency_owner', 'hr')
 
 router.get('/agency/reports/evv-summary/options', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getEvvSummaryOptions);
 router.get('/agency/reports/evv-summary/export', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportEvvSummary);
+router.post('/agency/reports/evv-summary/reminder', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.sendEvvSummaryReminder);
 router.get('/agency/reports/evv-summary', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getEvvSummary);
 router.get('/agency/time-cards/options', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getTimeCardOptions);
 router.get('/agency/time-cards/export', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportTimeCards);

@@ -1,6 +1,7 @@
 const constants = require('../../common/constants');
 const AdminEvvSummaryReportService = require('../../services/admin/adminEvvSummaryReport.service');
 const AdminTimeCardService = require('../../services/admin/adminTimeCard.service');
+const ReportReminderService = require('../../services/admin/reportReminder.service');
 
 const getAgencyId = (req) => {
   const account = req.agency_owner || req.hr;
@@ -41,6 +42,22 @@ module.exports.exportEvvSummary = async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.sendEvvSummaryReminder = async (req, res, next) => {
+  try {
+    const agencyId = getAgencyId(req);
+    const data = await ReportReminderService.sendReminder({
+      agencyId,
+      clientId: req.body?.clientId,
+      caregiverId: req.body?.caregiverId,
+      type: req.body?.type,
+      clientEvvStatus: req.body?.clientEvvStatus,
+    });
+    return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
     next(error);
   }

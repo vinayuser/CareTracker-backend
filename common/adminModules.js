@@ -16,7 +16,6 @@ const MODULE_GROUPS = [
       'ADMIN_CAREGIVERS',
       'ADMIN_SCHEDULES',
       'ADMIN_EVV_COMPLIANCE',
-      'ADMIN_MEDICAID',
     ],
   },
   {
@@ -30,17 +29,13 @@ const MODULE_GROUPS = [
   },
   {
     title: 'Growth',
-    keys: ['ADMIN_SOCIAL', 'ADMIN_MARKETING', 'ADMIN_REFERRALS', 'ADMIN_CRM'],
+    keys: ['ADMIN_MARKETING'],
   },
   {
     title: 'Platform',
     keys: [
       'ADMIN_TIME_CARD',
       'ADMIN_REPORTS',
-      'ADMIN_AUDIT_LOGS',
-      'ADMIN_INTEGRATIONS',
-      'ADMIN_SUPPORT',
-      'ADMIN_CONTENT',
       'ADMIN_SETTINGS',
     ],
   },
