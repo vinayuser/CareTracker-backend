@@ -317,6 +317,7 @@ router.put('/agency/visit-schedules/:id', Auth.authenticate('agency_owner', 'hr'
 router.delete('/agency/visit-schedules/:id', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.remove);
 router.post('/agency/visit-schedules/:id/regenerate', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.regenerate);
 router.get('/agency/visits', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getVisits);
+router.post('/agency/visits/reassign', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.reassignCoverage);
 router.delete('/agency/visits/:id', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.removeVisit);
 router.post('/agency/visits/:id/approve', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.approveVisit);
 router.post('/agency/visits/:id/reject', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.rejectVisit);

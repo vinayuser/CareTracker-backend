@@ -33,6 +33,7 @@ const VisitScheduleSchema = new mongoose.Schema(
     addressLat: { type: Number, default: null },
     addressLng: { type: Number, default: null },
     createdByAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount' },
+    coverageReason: { type: String, default: '' },
   },
   { timestamps: true },
 );

@@ -1,4 +1,5 @@
 const Model = require('../../models/index');
+const { ensureCoverageEnrollment } = require('./evvEnrollment.service');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const {
@@ -1091,6 +1092,119 @@ const removeVisit = async (req, id, options = {}) => {
  * Delete the full "row" of matching one-day schedules (same client, caregiver, care plan, times).
  * Skips days that are InProgress / Completed.
  */
+const LOCKED_COVER_STATUSES = ['InProgress', 'Completed'];
+
+const reassignCoverage = async (req, payload = {}) => {
+  const agencyId = getAgencyId(req);
+  const visitIds = [...new Set((payload.visit_ids || payload.visitIds || []).map((id) => String(id)).filter(Boolean))];
+  const caregiverId = payload.caregiver_account_id || payload.caregiverAccountId;
+  const reason = String(payload.reason || '').trim();
+  if (!visitIds.length) throw new Error('Select at least one visit day');
+  if (!caregiverId) throw new Error('Select a replacement caregiver');
+
+  const replacement = await Model.AgencyAccountModel.findOne({
+    _id: caregiverId,
+    agencyId,
+    role: 'CAREGIVER',
+  });
+  if (!replacement) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+
+  const visits = await Model.VisitModel.find({ _id: { $in: visitIds }, agencyId });
+  if (visits.length !== visitIds.length) throw new Error('One or more visits were not found');
+
+  const clientIds = new Set(visits.map((v) => String(v.clientId)));
+  if (clientIds.size !== 1) throw new Error('Cover visits for one client at a time');
+
+  const blocked = visits.filter((v) => v.checkInAt || LOCKED_COVER_STATUSES.includes(v.status) || v.invoiced);
+  if (blocked.length) {
+    throw new Error('A visit that is already clocked, completed, or invoiced cannot be reassigned');
+  }
+
+  const same = visits.filter((v) => String(v.caregiverAccountId) === String(replacement._id));
+  if (same.length) throw new Error('Those days are already assigned to this caregiver');
+
+  const accountId = getAccountId(req);
+  const moved = [];
+  const evvCreated = [];
+  const schedules = await Model.VisitScheduleModel.find({
+    _id: { $in: visits.map((v) => v.scheduleId).filter(Boolean) },
+    agencyId,
+  });
+  const scheduleById = new Map(schedules.map((s) => [String(s._id), s]));
+
+  for (const visit of visits) {
+    const schedule = scheduleById.get(String(visit.scheduleId));
+    if (!schedule) continue;
+    await assertNoScheduleTimeConflicts({
+      agencyId,
+      caregiverAccountId: replacement._id,
+      clientId: visit.clientId,
+      dateKeys: [visit.scheduledDate],
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      timezone: visit.timezone || schedule.timezone,
+      graceMinutes: visit.graceMinutes || schedule.graceMinutes || 15,
+      excludeScheduleIds: [visit.scheduleId],
+    });
+  }
+
+  for (const visit of visits) {
+    const fromId = visit.caregiverAccountId;
+    const fromName = visit.caregiverName || '';
+    visit.coverageHistory = visit.coverageHistory || [];
+    visit.coverageHistory.push({
+      at: new Date(),
+      fromCaregiverAccountId: fromId,
+      fromCaregiverName: fromName,
+      toCaregiverAccountId: replacement._id,
+      toCaregiverName: replacement.fullName || '',
+      reason,
+      byAccountId: accountId || null,
+    });
+    visit.caregiverAccountId = replacement._id;
+    visit.caregiverName = replacement.fullName || '';
+    visit.coverageReason = reason;
+    await visit.save();
+
+    if (visit.scheduleId) {
+      await Model.VisitScheduleModel.updateOne(
+        { _id: visit.scheduleId, agencyId },
+        {
+          $set: {
+            caregiverAccountId: replacement._id,
+            caregiverName: replacement.fullName || '',
+            coverageReason: reason,
+          },
+        },
+      );
+    }
+
+    const carePlan = await Model.CarePlanModel.findOne({ _id: visit.carePlanId, agencyId });
+    const client = await Model.ClientModel.findOne({ _id: visit.clientId, agencyId });
+    let evv = null;
+    if (carePlan && client) {
+      evv = await ensureCoverageEnrollment(agencyId, {
+        carePlan,
+        client,
+        caregiver: replacement,
+        serviceAreaKey: visit.careNeedAreaKey || visit.serviceArea || 'coverage',
+        serviceArea: visit.serviceArea || visit.careNeedAreaKey || 'Coverage',
+        accountId,
+        dateKey: visit.scheduledDate,
+      });
+      if (evv.created) evvCreated.push(String(evv.enrollment._id));
+    }
+
+    moved.push(formatVisit(visit));
+  }
+
+  return {
+    visits: moved,
+    evvCreatedCount: evvCreated.length,
+    caregiverName: replacement.fullName || '',
+  };
+};
+
 const removeVisitSeries = async (req, visit, schedule) => {
   const agencyId = getAgencyId(req);
   const fingerprint = {
@@ -3123,6 +3237,7 @@ module.exports = {
   updateSchedule,
   removeSchedule,
   removeVisit,
+  reassignCoverage,
   getVisits,
   getCarePlanScheduleSources,
   getCaregiverVisits,

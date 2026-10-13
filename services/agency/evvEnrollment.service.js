@@ -518,6 +518,7 @@ const syncFromCarePlan = async (agencyId, carePlanDoc) => {
     status: 'Pending',
   });
   for (const doc of pendingDocs) {
+    if (doc.coverageOnly) continue;
     const cgId = String(doc.caregiverAccountId);
     const areaKey = doc.serviceAreaKey || '';
     const key = areaKey ? `${cgId}::${areaKey}` : '';
@@ -1288,8 +1289,94 @@ const signClient = async (req, id, payload = {}) => {
   return formatEvvEnrollment(populated, { client: populated.clientId, carePlan: populated.carePlanId });
 };
 
+/** EVV for a coverage caregiver. Reuses an existing form for the same plan + service. */
+const ensureCoverageEnrollment = async (agencyId, { carePlan, client, caregiver, serviceAreaKey, serviceArea, accountId, dateKey }) => {
+  const areaKey = String(serviceAreaKey || serviceArea || 'coverage').trim() || 'coverage';
+  let enrollment = await Model.EvvEnrollmentModel.findOne({
+    agencyId,
+    carePlanId: carePlan._id,
+    caregiverAccountId: caregiver._id,
+    serviceAreaKey: areaKey,
+  });
+  if (enrollment) {
+    const dates = new Set(enrollment.formData?.coverageDates || []);
+    if (dateKey) dates.add(dateKey);
+    enrollment.formData = { ...(enrollment.formData || {}), coverageDates: [...dates] };
+    if (!enrollment.coverageOnly && dates.size) {
+      /* keep a plan-based form; just record covered dates */
+    }
+    await enrollment.save();
+    return { enrollment, created: false };
+  }
+
+  const agency = await Model.AgencyModel.findById(agencyId);
+  const profile = await ensureCaregiverProfile(caregiver);
+  const assignment = {
+    serviceAreaKey: areaKey,
+    serviceAreas: [serviceArea || areaKey],
+    frequencies: [],
+  };
+  const prefill = buildPrefillFormData(
+    client,
+    caregiver,
+    agency,
+    carePlan,
+    assignment,
+    profile?.candidate || null,
+    profile?.formProfile || null,
+  );
+  prefill.coverageDates = dateKey ? [dateKey] : [];
+  enrollment = await createEnrollmentWithUniqueCode({
+    agencyId,
+    carePlanId: carePlan._id,
+    clientId: client._id,
+    caregiverAccountId: caregiver._id,
+    serviceAreaKey: areaKey,
+    planCode: carePlan.planCode || '',
+    clientName: `${client.firstName || ''} ${client.lastName || ''}`.trim(),
+    caregiverName: caregiver.fullName || '',
+    serviceAreas: assignment.serviceAreas,
+    status: 'Pending',
+    coverageOnly: true,
+    enrollmentDate: new Date().toISOString().split('T')[0],
+    formData: prefill,
+    createdByAccountId: accountId || null,
+  });
+
+  try {
+    if (caregiver.email) {
+      const formUrl = `${functions.getFrontendUrl()}/caregiver/evv-enrollments/${enrollment._id}`;
+      await sendEvvEnrollmentAssignedEmail({
+        to: caregiver.email,
+        caregiverName: caregiver.fullName || 'Caregiver',
+        agencyName: agency?.name,
+        clientName: enrollment.clientName,
+        serviceName: serviceArea || areaKey,
+        enrollmentCode: enrollment.enrollmentCode,
+        formUrl,
+      });
+    }
+    if (client.email) {
+      const clientFormUrl = `${functions.getFrontendUrl()}/client/evv-enrollments/${enrollment._id}`;
+      await sendEvvEnrollmentClientAssignedEmail({
+        to: client.email,
+        clientName: enrollment.clientName,
+        caregiverName: caregiver.fullName || 'Caregiver',
+        agencyName: agency?.name,
+        enrollmentCode: enrollment.enrollmentCode,
+        formUrl: clientFormUrl,
+      });
+    }
+  } catch (err) {
+    console.error('[ensureCoverageEnrollment] email failed', err.message);
+  }
+
+  return { enrollment, created: true };
+};
+
 module.exports = {
   syncFromCarePlan,
+  ensureCoverageEnrollment,
   getOptions,
   getStats,
   getAll,

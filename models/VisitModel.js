@@ -105,6 +105,20 @@ const VisitSchema = new mongoose.Schema(
     approvedAt: { type: Date, default: null },
     rejectionReason: { type: String, default: '' },
     approvalNotes: { type: String, default: '' },
+
+    coverageReason: { type: String, default: '' },
+    coverageHistory: {
+      type: [{
+        at: { type: Date, default: Date.now },
+        fromCaregiverAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', default: null },
+        fromCaregiverName: { type: String, default: '' },
+        toCaregiverAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', default: null },
+        toCaregiverName: { type: String, default: '' },
+        reason: { type: String, default: '' },
+        byAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', default: null },
+      }],
+      default: [],
+    },
   },
   { timestamps: true },
 );

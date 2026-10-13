@@ -21,6 +21,8 @@ const EvvEnrollmentSchema = new mongoose.Schema(
     verifiedAt: { type: Date, default: null },
     verifiedByAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount', default: null },
     createdByAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount' },
+    /** Created for a day-level caregiver cover. Not removed when the care plan assignment list is synced. */
+    coverageOnly: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

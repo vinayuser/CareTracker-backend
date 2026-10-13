@@ -66,6 +66,15 @@ module.exports.remove = async (req, res, next) => {
   }
 };
 
+module.exports.reassignCoverage = async (req, res, next) => {
+  try {
+    const data = await VisitScheduleService.reassignCoverage(req, req.body || {});
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.removeVisit = async (req, res, next) => {
   try {
     const data = await VisitScheduleService.removeVisit(req, req.params.id, {
