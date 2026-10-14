@@ -21,6 +21,11 @@ const CandidateSchema = new mongoose.Schema(
     resumePath: { type: String, default: '' },
     profilePicPath: { type: String, default: '' },
     caregiverAccountId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgencyAccount' },
+    availability: {
+      type: String,
+      enum: ['Available', 'Assigned', 'Unavailable'],
+      default: 'Available',
+    },
   },
   { timestamps: true },
 );

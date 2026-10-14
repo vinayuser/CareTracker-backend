@@ -349,8 +349,11 @@ router.get('/agency/time-cards/:id', Auth.authenticate('agency_owner', 'hr'), Co
 router.get('/agency/job-applications/stats', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStats);
 router.get('/agency/job-applications/job/:jobId/stage/:stageId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getByJobAndStage);
 router.get('/agency/job-applications/job/:jobId/rejected', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getRejectedByJob);
+router.get('/agency/job-applications/candidates', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.listCandidates);
+router.patch('/agency/job-applications/candidates/:id/availability', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.setAvailability);
 router.get('/agency/job-applications', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getApplications);
 router.post('/agency/job-applications', Auth.authenticate('agency_owner', 'hr'), require('../middleware/candidateUpload'), Controller.CandidateApplicationController.apply);
+router.put('/agency/job-applications/:id/candidate', Auth.authenticate('agency_owner', 'hr'), require('../middleware/candidateUpload'), Controller.CandidateApplicationController.update);
 router.get('/agency/job-applications/hired/:jobId', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getHired);
 router.get('/agency/job-applications/:id/stage-info', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.getStageInfo);
 router.post('/agency/job-applications/:id/set-stage', Auth.authenticate('agency_owner', 'hr'), Controller.CandidateApplicationController.setStage);

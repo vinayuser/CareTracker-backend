@@ -13,9 +13,41 @@ module.exports.getApplications = async (req, res, next) => {
 
 module.exports.apply = async (req, res, next) => {
   try {
-    await Validation.CandidateApplication.apply.validateAsync(req.body);
+    const schema = req.body.candidate_id
+      ? Validation.CandidateApplication.applyExisting
+      : Validation.CandidateApplication.apply;
+    await schema.validateAsync(req.body);
     const data = await CandidateApplicationService.applyForJob(req, req.body);
     return res.success(constants.MESSAGE.CANDIDATE.APPLIED, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.listCandidates = async (req, res, next) => {
+  try {
+    const data = await CandidateApplicationService.listCandidates(req);
+    return res.success(constants.MESSAGE.LIST, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.setAvailability = async (req, res, next) => {
+  try {
+    await Validation.CandidateApplication.availability.validateAsync(req.body);
+    const data = await CandidateApplicationService.setAvailability(req, req.params.id, req.body.availability);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.update = async (req, res, next) => {
+  try {
+    await Validation.CandidateApplication.update.validateAsync(req.body);
+    const data = await CandidateApplicationService.updateCandidate(req, req.params.id, req.body);
+    return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
     next(error);
   }

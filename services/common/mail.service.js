@@ -129,7 +129,9 @@ const sendMail = async ({ to, subject, html, text }) => {
       return await sendViaMailchimp({ to, subject, html, text });
     } catch (err) {
       console.error('[mail] Mailchimp send failed', err.message);
-      throw err;
+      const error = new Error('Unable to send the email. The email address may be wrong. Please check it and try again.');
+      error.statusCode = 400;
+      throw error;
     }
   }
 

@@ -110,6 +110,7 @@ const formatCandidate = (doc) => {
     ? new Date(client.dateOfBirth).toISOString().slice(0, 10)
     : '';
   client.source_id = client.sourceId || '';
+  client.availability = doc.availability || 'Available';
   client.profile_pic = buildUploadUrl(client.profilePicPath);
   client.resume = buildUploadUrl(client.resumePath);
   return client;
@@ -138,6 +139,17 @@ const getFirstStageForJob = async (job) => {
   return stages[0] || null;
 };
 
+const refreshAvailability = async (candidateId) => {
+  const candidate = await Model.CandidateModel.findById(candidateId);
+  if (!candidate || candidate.availability === 'Unavailable') return;
+  const placed = await Model.CandidateApplicationModel.countDocuments({
+    candidateId,
+    status: { $in: ['Active', 'Hired'] },
+  });
+  candidate.availability = placed > 0 ? 'Assigned' : 'Available';
+  await candidate.save();
+};
+
 const applyForJob = async (req, payload) => {
   const agencyId = getAgencyId(req);
   const job = await Model.JobPostModel.findOne({ _id: payload.job_id, agencyId });
@@ -148,10 +160,19 @@ const applyForJob = async (req, payload) => {
     await job.save();
   }
 
-  const existingCandidate = await Model.CandidateModel.findOne({
-    agencyId,
-    email: payload.email.toLowerCase(),
-  });
+  let existingCandidate = null;
+  if (payload.candidate_id) {
+    existingCandidate = await Model.CandidateModel.findOne({ _id: payload.candidate_id, agencyId });
+    if (!existingCandidate) throw new Error(constants.MESSAGE.CANDIDATE.NOT_FOUND || 'Candidate not found');
+    if (existingCandidate.availability === 'Unavailable') {
+      throw new Error('This candidate is unavailable for a new job');
+    }
+  } else if (payload.email) {
+    existingCandidate = await Model.CandidateModel.findOne({
+      agencyId,
+      email: payload.email.toLowerCase(),
+    });
+  }
 
   let candidate = existingCandidate;
   if (!candidate) {
@@ -188,6 +209,9 @@ const applyForJob = async (req, payload) => {
     jobPostId: job._id,
   });
   if (existingApp) throw new Error(constants.MESSAGE.CANDIDATE.ALREADY_APPLIED);
+
+  candidate.availability = 'Assigned';
+  await candidate.save();
 
   const firstStage = await getFirstStageForJob(job);
 
@@ -275,8 +299,42 @@ const applyForJob = async (req, payload) => {
   return formatted;
 };
 
+const ensureAvailability = async (agencyId) => {
+  const missing = await Model.CandidateModel.find({
+    agencyId,
+    $or: [{ availability: { $exists: false } }, { availability: null }, { availability: '' }],
+  });
+  if (!missing.length) return;
+  const placed = await Model.CandidateApplicationModel.find({
+    agencyId,
+    status: { $in: ['Active', 'Hired'] },
+  }).select('candidateId').lean();
+  const placedIds = new Set(placed.map((row) => String(row.candidateId)));
+  await Promise.all(missing.map(async (doc) => {
+    doc.availability = placedIds.has(String(doc._id)) ? 'Assigned' : 'Available';
+    await doc.save();
+  }));
+};
+
+const listCandidates = async (req) => {
+  const agencyId = getAgencyId(req);
+  await ensureAvailability(agencyId);
+  const docs = await Model.CandidateModel.find({ agencyId }).sort({ firstName: 1, lastName: 1 });
+  return docs.map((doc) => formatCandidate(doc));
+};
+
+const setAvailability = async (req, candidateId, availability) => {
+  const agencyId = getAgencyId(req);
+  const candidate = await Model.CandidateModel.findOne({ _id: candidateId, agencyId });
+  if (!candidate) throw new Error(constants.MESSAGE.CANDIDATE.NOT_FOUND || 'Candidate not found');
+  candidate.availability = availability;
+  await candidate.save();
+  return formatCandidate(candidate);
+};
+
 const getAllApplications = async (req, query = {}) => {
   const agencyId = getAgencyId(req);
+  await ensureAvailability(agencyId);
   const filter = { agencyId };
   if (query.job_id) filter.jobPostId = query.job_id;
   if (query.status) filter.status = query.status;
@@ -702,6 +760,7 @@ const rejectApplication = async (req, applicationId) => {
   app.status = 'Rejected';
   app.rejectedAt = new Date();
   await app.save();
+  await refreshAvailability(app.candidateId?._id || app.candidateId);
 
   if (job) await syncJobAfterHireRemoved(job);
   return formatApplicationPopulated(app);
@@ -737,6 +796,8 @@ const deleteApplication = async (req, applicationId) => {
     });
     if (otherApps === 0) {
       await Model.CandidateModel.deleteOne({ _id: candidateId, agencyId });
+    } else {
+      await refreshAvailability(candidateId);
     }
   }
 
@@ -1010,8 +1071,62 @@ const sendEmail = async (req, applicationId, payload) => {
   };
 };
 
+const updateCandidate = async (req, applicationId, payload) => {
+  const agencyId = getAgencyId(req);
+  const application = await Model.CandidateApplicationModel.findOne({ _id: applicationId, agencyId })
+    .populate('candidateId')
+    .populate('jobPostId')
+    .populate('agencyStageId');
+  if (!application) throw new Error(constants.MESSAGE.CANDIDATE.NOT_FOUND || 'Candidate not found');
+
+  const candidate = application.candidateId;
+  if (!candidate) throw new Error('Candidate not found');
+
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (email && email !== String(candidate.email || '').toLowerCase()) {
+    await assertEmailGloballyAvailable(email, { candidateId: candidate._id });
+  }
+
+  const dateOfBirth = payload.date_of_birth ? new Date(payload.date_of_birth) : null;
+  const profilePicPath = getUploadedFilePath(req, 'profile_pic');
+  const resumePath = getUploadedFilePath(req, 'resume');
+
+  candidate.firstName = payload.first_name;
+  candidate.lastName = payload.last_name;
+  candidate.email = email;
+  candidate.phone = payload.phone || '';
+  candidate.designation = payload.designation || '';
+  candidate.location = payload.location || '';
+  candidate.country = payload.country || '';
+  candidate.education = payload.education || '';
+  candidate.experience = parseExperience(payload.experience);
+  candidate.currentCtc = Number(payload.current_ctc) || 0;
+  candidate.expectedCtc = Number(payload.expected_ctc) || 0;
+  candidate.dateOfBirth = dateOfBirth && !Number.isNaN(dateOfBirth.getTime()) ? dateOfBirth : undefined;
+  candidate.summary = payload.summary || '';
+  candidate.skills = payload.skills || '';
+  if (profilePicPath) candidate.profilePicPath = profilePicPath;
+  if (resumePath) candidate.resumePath = resumePath;
+  await candidate.save();
+
+  return formatApplication(application, {
+    candidate: formatCandidate(candidate),
+    job: application.jobPostId ? {
+      id: String(application.jobPostId._id),
+      job_title: application.jobPostId.jobTitle,
+    } : null,
+    stage: application.agencyStageId ? {
+      id: String(application.agencyStageId._id),
+      name: application.agencyStageId.name,
+    } : null,
+  });
+};
+
 module.exports = {
   applyForJob,
+  updateCandidate,
+  listCandidates,
+  setAvailability,
   getAllApplications,
   setStage,
   moveToNextStage,
