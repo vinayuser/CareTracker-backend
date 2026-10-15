@@ -25,8 +25,12 @@ const formatAgencyAddress = (agency) => {
 };
 
 const generateInvoiceCode = async (agencyId) => {
-  const count = await Model.ClientInvoiceModel.countDocuments({ agencyId });
-  return `INV-${String(10001 + count).padStart(5, '0')}`;
+  const latest = await Model.ClientInvoiceModel.findOne({ agencyId })
+    .sort({ invoiceCode: -1 })
+    .select('invoiceCode')
+    .lean();
+  const current = Number(String(latest?.invoiceCode || '').replace(/\D/g, '')) || 10000;
+  return `INV-${String(current + 1).padStart(5, '0')}`;
 };
 
 const buildLineFromVisit = (visit) => {
@@ -209,13 +213,23 @@ const generateDraft = async (req, payload) => {
   const periodFrom = payload.period_from;
   const periodTo = payload.period_to;
 
+  const voidInvoiceIds = await Model.ClientInvoiceModel.find({
+    agencyId,
+    clientId: client._id,
+    status: 'Void',
+  }).distinct('_id');
+
   const visits = await Model.VisitModel.find({
     agencyId,
     clientId: client._id,
     approvalStatus: 'Approved',
-    invoiced: { $ne: true },
     scheduledDate: { $gte: periodFrom, $lte: periodTo },
     checkOutAt: { $ne: null },
+    $or: [
+      { invoiced: { $ne: true } },
+      { invoiceId: { $in: voidInvoiceIds } },
+      { invoiceId: null },
+    ],
   }).sort({ scheduledDate: 1, scheduledStartAt: 1 });
 
   if (!visits.length) throw new Error(constants.MESSAGE.INVOICE.NO_VISITS);
@@ -363,7 +377,7 @@ const voidInvoice = async (req, id) => {
   const visitIds = (invoice.lines || []).map((l) => l.visitId).filter(Boolean);
   if (visitIds.length) {
     await Model.VisitModel.updateMany(
-      { _id: { $in: visitIds }, invoiceId: invoice._id },
+      { _id: { $in: visitIds } },
       { $set: { invoiced: false, invoiceId: null } },
     );
   }

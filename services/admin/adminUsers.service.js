@@ -281,7 +281,8 @@ const getSchedules = async (agencyId, query = {}) => {
     ? query.weekStart
     : startOfWeekMonday(new Date());
   const weekEnd = addDaysKey(weekStart, 6);
-  const userId = String(query.userId || '').trim();
+  const rawUserId = String(query.userId || '').trim();
+  const userId = /^[a-f\d]{24}$/i.test(rawUserId) ? rawUserId : '';
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = addDaysKey(weekStart, i);
@@ -387,7 +388,8 @@ const getEvvForms = async (agencyId, query = {}) => {
   await assertAgency(agencyId);
 
   // Enrollment forms are independent of the schedules week picker.
-  const userId = String(query.userId || '').trim();
+  const rawUserId = String(query.userId || '').trim();
+  const userId = /^[a-f\d]{24}$/i.test(rawUserId) ? rawUserId : '';
   const status = String(query.status || 'All').trim();
   const defaultLimit = userId ? 100 : 20;
   const limit = Math.min(200, Math.max(1, Number(query.limit) || defaultLimit));

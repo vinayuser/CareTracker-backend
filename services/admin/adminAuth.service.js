@@ -308,7 +308,7 @@ const updateProfile = async (req, payload = {}) => {
   if (payload.dateOfBirth !== undefined) {
     account.dateOfBirth = String(payload.dateOfBirth || '').trim();
   }
-  if (payload.employeeId !== undefined) {
+  if (payload.employeeId !== undefined && account.role !== 'CAREGIVER') {
     account.employeeId = String(payload.employeeId || '').trim();
   }
   if (payload.userId !== undefined) {

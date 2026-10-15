@@ -8,7 +8,7 @@ const hrStaffFields = {
   phone: Joi.string().trim().required(),
   dateOfBirth: Joi.string().allow('').optional(),
   gender: Joi.string().allow('').optional(),
-  employeeId: Joi.string().trim().required(),
+  employeeId: Joi.string().trim().allow('').optional(),
   jobTitle: Joi.string().trim().required(),
   department: Joi.string().allow('').optional(),
   hireDate: Joi.string().required(),

@@ -177,6 +177,7 @@ router.post('/admin/invitations/:id/resend', Auth.authenticate('super_admin'), C
 router.delete('/admin/invitations/:id', Auth.authenticate('super_admin'), Controller.InvitationController.remove);
 
 // Agency portal — /api/agency/*
+router.get('/agency/hr-staff/next-employee-id', Auth.authenticate('agency_owner'), Controller.HrStaffController.getNextEmployeeId);
 router.get('/agency/hr-staff/stats', Auth.authenticate('agency_owner', 'hr'), Controller.HrStaffController.getStats);
 router.get('/agency/hr-staff', Auth.authenticate('agency_owner', 'hr'), Controller.HrStaffController.getAll);
 router.get('/agency/hr-staff/:id', Auth.authenticate('agency_owner', 'hr'), Controller.HrStaffController.getById);

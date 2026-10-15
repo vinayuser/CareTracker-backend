@@ -46,6 +46,7 @@ const HrStaffSchema = new mongoose.Schema(
 );
 
 HrStaffSchema.index({ agencyId: 1, employeeId: 1 }, { unique: true });
+HrStaffSchema.index({ employeeId: 1 }, { unique: true });
 HrStaffSchema.index({ agencyId: 1, email: 1 });
 
 module.exports = mongoose.model('HrStaff', HrStaffSchema);

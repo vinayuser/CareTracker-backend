@@ -33,6 +33,42 @@ const assertAgencyOwner = (req) => {
   if (!req.agency_owner) throw new Error(constants.MESSAGE.AUTH.UNAUTHORIZED);
 };
 
+const agencyCodeFromName = (name) => {
+  const words = String(name || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = words.map((word) => word[0]).join('');
+  const compact = words.join('');
+  const code = (initials.length >= 2 ? initials : compact).replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  return code || 'AGY';
+};
+
+const nextHrEmployeeId = async (agencyId) => {
+  const agency = await Model.AgencyModel.findById(agencyId).select('name').lean();
+  const code = agencyCodeFromName(agency?.name);
+  const prefix = `HR-${code}-`;
+  const existing = await Model.HrStaffModel.find({ agencyId }).select('employeeId').lean();
+  let max = 0;
+  existing.forEach((row) => {
+    const match = String(row.employeeId || '').match(/(\d+)\s*$/);
+    if (match) max = Math.max(max, Number(match[1]));
+  });
+  for (let n = max + 1; n < max + 1000; n += 1) {
+    const employeeId = `${prefix}${String(n).padStart(3, '0')}`;
+    const clash = await Model.HrStaffModel.findOne({ employeeId }).select('_id').lean();
+    if (!clash) return employeeId;
+  }
+  throw new Error('Unable to generate a unique Employee ID');
+};
+
+const getNextEmployeeId = async (req) => {
+  const agencyId = getAgencyId(req);
+  const employeeId = await nextHrEmployeeId(agencyId);
+  return { employeeId };
+};
+
 const getStats = async (req) => {
   const agencyId = getAgencyId(req);
   const list = await Model.HrStaffModel.find({ agencyId });
@@ -85,11 +121,7 @@ const create = async (req, payload) => {
     userId: payload.userId,
   });
 
-  const existingEmployee = await Model.HrStaffModel.findOne({
-    agencyId,
-    employeeId: payload.employeeId,
-  });
-  if (existingEmployee) throw new Error(constants.MESSAGE.HR.ALREADY_EXISTS);
+  const employeeId = await nextHrEmployeeId(agencyId);
 
   const moduleAccess = sanitizeModuleAccess(payload.moduleAccess);
 
@@ -102,6 +134,7 @@ const create = async (req, payload) => {
     agencyId,
     password: 'placeholder',
     moduleAccess,
+    employeeId,
   });
   await account.setPassword(payload.password);
   await account.save();
@@ -115,7 +148,7 @@ const create = async (req, payload) => {
     phone: payload.phone,
     dateOfBirth: payload.dateOfBirth || '',
     gender: payload.gender || '',
-    employeeId: payload.employeeId,
+    employeeId,
     jobTitle: payload.jobTitle,
     department: payload.department || 'Human Resources',
     hireDate: payload.hireDate,
@@ -199,15 +232,6 @@ const update = async (req, id, payload) => {
     });
   }
 
-  if (payload.employeeId !== undefined && payload.employeeId !== member.employeeId) {
-    const employeeClash = await Model.HrStaffModel.findOne({
-      agencyId,
-      employeeId: payload.employeeId,
-      _id: { $ne: member._id },
-    });
-    if (employeeClash) throw new Error(constants.MESSAGE.HR.ALREADY_EXISTS);
-  }
-
   const updatableFields = [
     'firstName',
     'lastName',
@@ -215,7 +239,6 @@ const update = async (req, id, payload) => {
     'phone',
     'dateOfBirth',
     'gender',
-    'employeeId',
     'jobTitle',
     'department',
     'hireDate',
@@ -353,6 +376,7 @@ const sendEmail = async (req, id, payload) => {
 };
 
 module.exports = {
+  getNextEmployeeId,
   getStats,
   getAll,
   getById,

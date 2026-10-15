@@ -193,14 +193,37 @@ const update = async (req, id, payload) => {
   if (!account) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
 
   if (payload.email || payload.userId) {
+    let candidateId = account.candidateId?._id || account.candidateId || null;
+    if (!candidateId && account.email) {
+      const linked = await Model.CandidateModel.findOne({
+        agencyId,
+        email: String(account.email).toLowerCase(),
+      }).select('_id');
+      candidateId = linked?._id || null;
+    }
     await assertLoginIdentifiersAvailable({
       email: payload.email !== undefined ? payload.email : account.email,
       userId: payload.userId !== undefined ? payload.userId : account.userId,
-      exclude: { accountId: account._id },
+      exclude: { accountId: account._id, candidateId },
     });
   }
 
-  if (payload.fullName !== undefined) account.fullName = payload.fullName.trim();
+  if (payload.fullName !== undefined) {
+    const nextName = payload.fullName.trim();
+    account.fullName = nextName;
+    if (nextName) {
+      await Promise.all([
+        Model.VisitModel.updateMany(
+          { caregiverAccountId: account._id },
+          { $set: { caregiverName: nextName } },
+        ),
+        Model.VisitScheduleModel.updateMany(
+          { caregiverAccountId: account._id },
+          { $set: { caregiverName: nextName } },
+        ),
+      ]);
+    }
+  }
   if (payload.email !== undefined) account.email = payload.email.toLowerCase().trim();
   if (payload.userId !== undefined) account.userId = payload.userId.toLowerCase().trim();
   if (payload.phone !== undefined) account.phone = payload.phone;

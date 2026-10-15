@@ -771,11 +771,14 @@ const getAll = async (req, query = {}) => {
     ];
   }
 
+  const sortField = query.sort === 'createdAt' ? 'createdAt' : 'updatedAt';
+  const sortDir = String(query.order || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
   const [total, list] = await Promise.all([
     Model.EvvEnrollmentModel.countDocuments(filter),
     Model.EvvEnrollmentModel.find(filter)
       .select(LIST_PROJECTION)
-      .sort({ createdAt: -1 })
+      .sort({ [sortField]: sortDir, _id: sortDir })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),

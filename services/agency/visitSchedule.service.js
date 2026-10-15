@@ -257,6 +257,21 @@ const resolveHourlyRate = async (carePlanId) => {
   return Number.isFinite(rate) && rate > 0 ? rate : 25;
 };
 
+/** Calendar labels follow the caregiver account, not the name copied onto the visit. */
+const applyLiveCaregiverNames = async (docs = []) => {
+  const ids = [...new Set(docs.map((doc) => String(doc.caregiverAccountId || '')).filter(Boolean))];
+  if (!ids.length) return docs;
+  const accounts = await Model.AgencyAccountModel.find({ _id: { $in: ids } })
+    .select('fullName')
+    .lean();
+  const names = new Map(accounts.map((account) => [String(account._id), account.fullName || '']));
+  docs.forEach((doc) => {
+    const name = names.get(String(doc.caregiverAccountId || ''));
+    if (name) doc.caregiverName = name;
+  });
+  return docs;
+};
+
 const formatVisit = (doc, { now = new Date() } = {}) => {
   const item = functions.toClientDoc(doc);
   if (!item) return null;
@@ -407,7 +422,7 @@ const assertNoScheduleTimeConflicts = async ({
   }
 
   const existing = await Model.VisitModel.find(filter)
-    .select('scheduledDate scheduledStartAt scheduledEndAt clientName caregiverName caregiverAccountId clientId')
+    .select('scheduledDate scheduledStartAt scheduledEndAt clientName caregiverName caregiverAccountId clientId timezone')
     .lean();
 
   for (const visit of existing) {
@@ -419,10 +434,23 @@ const assertNoScheduleTimeConflicts = async ({
 
     const sameCaregiver = String(visit.caregiverAccountId) === String(caregiverAccountId);
     const detail = sameCaregiver
-      ? `Caregiver already has a visit${visit.clientName ? ` with ${visit.clientName}` : ''}`
-      : `Client already has a visit${visit.caregiverName ? ` with ${visit.caregiverName}` : ''}`;
+      ? `This caregiver already has a visit${visit.clientName ? ` with ${visit.clientName}` : ''}`
+      : `This client already has a visit${visit.caregiverName ? ` with ${visit.caregiverName}` : ''}`;
+    const existingTz = resolveTimezone(visit.timezone || timezone);
+    const existingStart = new Intl.DateTimeFormat('en-GB', {
+      timeZone: existingTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(visit.scheduledStartAt));
+    const existingEnd = new Intl.DateTimeFormat('en-GB', {
+      timeZone: existingTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(visit.scheduledEndAt));
     throw new Error(
-      `${detail} on ${visit.scheduledDate} that overlaps ${startTime}–${endTime}. Choose a different time.`,
+      `${detail} on ${visit.scheduledDate} from ${existingStart}–${existingEnd}. The time you entered (${startTime}–${endTime}) overlaps that visit. Pick a time outside ${existingStart}–${existingEnd}.`,
     );
   }
 };
@@ -1435,6 +1463,7 @@ const getVisits = async (req, query = {}) => {
       .select(VISIT_LIST_PROJECTION)
       .sort({ scheduledStartAt: 1 })
       .lean();
+    await applyLiveCaregiverNames(list);
     return list.map((doc) => formatVisit(doc));
   }
 
@@ -1452,6 +1481,8 @@ const getVisits = async (req, query = {}) => {
       .lean(),
     includeSummary ? buildVisitSummary(filter) : Promise.resolve(undefined),
   ]);
+
+  await applyLiveCaregiverNames(list);
 
   return {
     list: list.map((doc) => formatVisit(doc)),
@@ -2931,6 +2962,8 @@ const getCaregiverDashboard = async (req) => {
       text: `${v.clientName || 'Client'} visit was missed (past grace + 1 hour).`,
       time: 'Today',
       tone: 'warning',
+      visit_id: String(v._id),
+      scheduled_date: v.scheduledDate || '',
     });
   });
   todayVisits.filter((v) => v.lateCheckIn).forEach((v) => {
@@ -2943,6 +2976,8 @@ const getCaregiverDashboard = async (req) => {
         ? formatWallClockTime(v.checkInAt, tz)
         : 'Today',
       tone: 'warning',
+      visit_id: String(v._id),
+      scheduled_date: v.scheduledDate || '',
     });
   });
   const pendingEnroll = enrollments.filter((e) => ['Pending', 'Submitted', 'Rejected'].includes(e.status));
@@ -2953,6 +2988,7 @@ const getCaregiverDashboard = async (req) => {
       text: `Enrollment is ${e.status}. Complete verification to clock in.`,
       time: 'Action needed',
       tone: e.status === 'Rejected' ? 'warning' : 'info',
+      enrollment_id: String(e._id),
     });
   });
 
@@ -2965,6 +3001,8 @@ const getCaregiverDashboard = async (req) => {
       text: `${nextUpcoming.clientName || 'Client'} at ${formatWallClockTime(nextUpcoming.scheduledStartAt, tz)}.`,
       time: 'Today',
       tone: 'info',
+      visit_id: String(nextUpcoming._id),
+      scheduled_date: nextUpcoming.scheduledDate || '',
     });
   }
 

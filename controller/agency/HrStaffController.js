@@ -2,6 +2,15 @@ const Validation = require('../../validation/index');
 const constants = require('../../common/constants');
 const { HrStaffService } = require('../../services');
 
+module.exports.getNextEmployeeId = async (req, res, next) => {
+  try {
+    const data = await HrStaffService.getNextEmployeeId(req);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.getStats = async (req, res, next) => {
   try {
     const data = await HrStaffService.getStats(req);
