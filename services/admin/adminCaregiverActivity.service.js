@@ -1,4 +1,5 @@
 const Model = require('../../models/index');
+const { ACTIVITY_TYPES } = require('../../common/caregiverActivity');
 
 const dateKey = (value) => {
   const date = value instanceof Date ? value : new Date(value);
@@ -34,9 +35,10 @@ const getLogs = async (query = {}) => {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 7));
   const filter = {};
 
-  if (query.agencyId) filter.agencyId = query.agencyId;
+  const isId = (value) => /^[a-f0-9]{24}$/i.test(String(value || ''));
+  if (query.agencyId || isId(query.agency)) filter.agencyId = query.agencyId || query.agency;
   else if (query.agency) filter.agencyName = query.agency;
-  if (query.caregiverId) filter.caregiverAccountId = query.caregiverId;
+  if (query.caregiverId || isId(query.caregiver)) filter.caregiverAccountId = query.caregiverId || query.caregiver;
   else if (query.caregiver) filter.caregiverName = query.caregiver;
   if (query.activity) filter.activityType = query.activity;
   if (query.from || query.to) {
@@ -45,12 +47,9 @@ const getLogs = async (query = {}) => {
     if (query.to) filter.at.$lte = new Date(`${query.to}T23:59:59.999`);
   }
 
-  const [total, docs, agencies, caregivers, types] = await Promise.all([
+  const [total, docs] = await Promise.all([
     Model.CaregiverActivityModel.countDocuments(filter),
     Model.CaregiverActivityModel.find(filter).sort({ at: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-    Model.CaregiverActivityModel.distinct('agencyName'),
-    Model.CaregiverActivityModel.distinct('caregiverName'),
-    Model.CaregiverActivityModel.distinct('activityType'),
   ]);
 
   const summaryFilter = { ...filter };
@@ -73,9 +72,7 @@ const getLogs = async (query = {}) => {
       to: Math.min(page * limit, total),
     },
     options: {
-      agencies: agencies.filter(Boolean).sort(),
-      caregivers: caregivers.filter(Boolean).sort(),
-      activityTypes: types.filter(Boolean).sort(),
+      activityTypes: ACTIVITY_TYPES,
     },
     summary: {
       total: activities,
@@ -87,4 +84,17 @@ const getLogs = async (query = {}) => {
   };
 };
 
-module.exports = { getLogs };
+const listCaregivers = async (query = {}) => {
+  const agencyId = String(query.agencyId || query.agency || '').trim();
+  if (!/^[a-f0-9]{24}$/i.test(agencyId)) return [];
+  const rows = await Model.AgencyAccountModel.find({
+    agencyId,
+    role: 'CAREGIVER',
+  }).select('fullName').sort({ fullName: 1 }).lean();
+  return rows.map((account) => ({
+    id: String(account._id),
+    name: account.fullName || 'Caregiver',
+  }));
+};
+
+module.exports = { getLogs, listCaregivers };

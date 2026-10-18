@@ -1,5 +1,7 @@
 const Model = require('../models/index');
 
+const ACTIVITY_TYPES = ['Session', 'Profile', 'Schedule', 'Worklog', 'EVV', 'Leave', 'Care plan'];
+
 /**
  * Persist one caregiver activity. Failures are logged and never block the caller.
  */
@@ -40,4 +42,4 @@ const recordCaregiverActivity = async (entry = {}) => {
   }
 };
 
-module.exports = { recordCaregiverActivity };
+module.exports = { recordCaregiverActivity, ACTIVITY_TYPES };
