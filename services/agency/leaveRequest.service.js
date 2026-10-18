@@ -10,6 +10,7 @@ const {
   clearLeaveRequestFromVisits,
 } = require('./holidayLeaveVisits.service');
 const NotificationService = require('../common/notification.service');
+const { recordCaregiverActivity } = require('../../common/caregiverActivity');
 
 const getAgencyAccount = (req) => req.agency_owner || req.hr;
 
@@ -42,11 +43,17 @@ const formatRequest = (doc) => {
   return item;
 };
 
+const isSunday = (dateKey) => {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  if (!year || !month || !day) return false;
+  return new Date(year, month - 1, day).getDay() === 0;
+};
+
 const chargeableDates = async (agencyId, startDate, endDate) => {
   const keys = dateKeysBetween(startDate, endDate);
   if (!keys.length) return [];
   const holidayMap = await getBlockingHolidayMap(agencyId, startDate, endDate);
-  return keys.filter((key) => !holidayMap.has(key));
+  return keys.filter((key) => !holidayMap.has(key) && !isSunday(key));
 };
 
 const hasOverlap = async (agencyId, caregiverAccountId, startDate, endDate, excludeId) => {
@@ -107,6 +114,20 @@ const createRequest = async (req, payload) => {
   item.pending = (Number(item.pending) || 0) + dates.length;
   await balance.save();
 
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiverId,
+    caregiverName: caregiver.fullName || caregiver.name || '',
+    activityType: 'Leave',
+    action: 'leave.applied',
+    activity: 'Leave requested',
+    related: item.name || typeKey,
+    detail: `${startDate} to ${endDate} (${dates.length} day(s))`,
+    status: 'Pending',
+    entityType: 'LeaveRequest',
+    entityId: request._id,
+  });
+
   NotificationService.emit(async () => {
     await NotificationService.notifyAgency(agencyId, {
       type: NotificationService.TYPES.LEAVE_REQUEST_SUBMITTED,
@@ -157,6 +178,20 @@ const cancelMine = async (req, id) => {
   await LeavePolicyService.adjustBalance(balance, request.typeKey, 'pending', -request.days);
   request.status = 'Cancelled';
   await request.save();
+
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiverId,
+    caregiverName: caregiver.fullName || caregiver.name || request.caregiverName || '',
+    activityType: 'Leave',
+    action: 'leave.cancelled',
+    activity: 'Leave cancelled',
+    related: request.typeName || '',
+    detail: `${request.startDate} to ${request.endDate}`,
+    status: 'Cancelled',
+    entityType: 'LeaveRequest',
+    entityId: request._id,
+  });
   return formatRequest(request);
 };
 

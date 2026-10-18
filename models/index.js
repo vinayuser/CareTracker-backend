@@ -33,4 +33,5 @@ module.exports = {
   CaregiverLeaveBalanceModel: require('./CaregiverLeaveBalanceModel'),
   LeaveRequestModel: require('./LeaveRequestModel'),
   NotificationModel: require('./NotificationModel'),
+  CaregiverActivityModel: require('./CaregiverActivityModel'),
 };

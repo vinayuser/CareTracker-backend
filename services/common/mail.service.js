@@ -67,7 +67,7 @@ const ctaButton = (href, label) => `
     </a>
   </p>`.trim();
 
-const sendViaSmtp = async ({ to, subject, html, text, from }) => {
+const sendViaSmtp = async ({ to, subject, html, text, from, attachments }) => {
   let nodemailer;
   try {
     nodemailer = require('nodemailer');
@@ -87,7 +87,7 @@ const sendViaSmtp = async ({ to, subject, html, text, from }) => {
     },
   });
 
-  await transporter.sendMail({ from, to, subject, html, text });
+  await transporter.sendMail({ from, to, subject, html, text, attachments });
   return { sent: true, devMode: false, provider: 'smtp' };
 };
 
@@ -106,7 +106,7 @@ const sendViaMailchimp = async ({ to, subject, html, text }) => {
   };
 };
 
-const sendMail = async ({ to, subject, html, text }) => {
+const sendMail = async ({ to, subject, html, text, attachments }) => {
   const from = process.env.MAILCHIMP_FROM_EMAIL
     || process.env.MAIL_FROM
     || process.env.MAIL_FROM_ADDRESS
@@ -119,8 +119,16 @@ const sendMail = async ({ to, subject, html, text }) => {
     console.log(`To: ${to}`);
     console.log(`Subject: ${subject}`);
     console.log(text || html);
+    if (attachments?.length) {
+      console.log(`Attachments: ${attachments.map((file) => file.filename).join(', ')}`);
+    }
     console.log('---\n');
     return { sent: false, devMode: true };
+  }
+
+  // Campaign mail cannot carry a file. Invoices with a PDF go through SMTP.
+  if (attachments?.length && isSmtpConfigured()) {
+    return sendViaSmtp({ to, subject, html, text, from, attachments });
   }
 
   // Default / preferred path: Mailchimp. SMTP only when explicitly requested.
@@ -135,7 +143,7 @@ const sendMail = async ({ to, subject, html, text }) => {
     }
   }
 
-  return sendViaSmtp({ to, subject, html, text, from });
+  return sendViaSmtp({ to, subject, html, text, from, attachments });
 };
 
 /** When a candidate is added to a job */
@@ -550,6 +558,7 @@ const sendCustomMessageEmail = async ({
   subject,
   message,
   senderName,
+  attachments,
 }) => {
   const agency = agencyName || 'Your agency';
   const emailSubject = subject || `Message from ${agency}`;
@@ -578,7 +587,7 @@ const sendCustomMessageEmail = async ({
     </p>
   `);
 
-  return sendMail({ to, subject: emailSubject, html, text });
+  return sendMail({ to, subject: emailSubject, html, text, attachments });
 };
 
 /** Custom message from agency owner to an HR staff member */
@@ -606,6 +615,7 @@ const sendCandidateCustomEmail = async ({
   subject,
   message,
   senderName,
+  attachments,
 }) => sendCustomMessageEmail({
   to,
   recipientName: candidateName,
@@ -613,6 +623,7 @@ const sendCandidateCustomEmail = async ({
   subject,
   message,
   senderName,
+  attachments,
 });
 
 /** When an EVV enrollment form is assigned to a caregiver */

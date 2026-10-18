@@ -37,6 +37,7 @@ const ClientInvoiceSchema = new mongoose.Schema(
     agencyAddress: { type: String, default: '' },
     periodFrom: { type: String, required: true },
     periodTo: { type: String, required: true },
+    dueDate: { type: Date, default: null },
     status: {
       type: String,
       enum: ['Draft', 'Sent', 'Paid', 'Void'],

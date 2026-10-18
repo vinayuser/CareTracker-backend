@@ -62,7 +62,11 @@ const clientFields = {
   mobilityAssistanceDescription: stringField,
   personalCareAssistanceNeeded: boolField,
   personalCareAssistanceDescription: stringField,
-  careFrequency: Joi.string().valid(...clientConstants.CARE_FREQUENCIES, '').optional(),
+  careFrequency: Joi.string().valid(...clientConstants.CARE_FREQUENCIES).required().messages({
+    'any.required': 'Care frequency is required. Select how often care is needed.',
+    'string.empty': 'Care frequency is required. Select how often care is needed.',
+    'any.only': 'Care frequency is required. Select how often care is needed.',
+  }),
   preferredDays: stringArray,
   preferredTimes: stringArray,
   careNotes: stringField,

@@ -1,4 +1,5 @@
 const Model = require('../../models/index');
+const { recordCaregiverActivity } = require('../../common/caregiverActivity');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const evvConstants = require('../../common/evvEnrollmentConstants');
@@ -1104,6 +1105,20 @@ const submitCaregiver = async (req, id, payload) => {
   doc.status = 'Submitted';
   doc.submittedAt = new Date();
   await doc.save();
+
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiver._id || caregiver.id,
+    caregiverName: caregiver.fullName || doc.caregiverName || '',
+    activityType: 'EVV',
+    action: 'evv.submitted',
+    activity: 'EVV form submitted',
+    related: doc.enrollmentCode || '',
+    detail: doc.clientName ? `Client: ${doc.clientName}` : 'Enrollment submitted',
+    status: 'Submitted',
+    entityType: 'EvvEnrollment',
+    entityId: doc._id,
+  });
 
   const populated = await Model.EvvEnrollmentModel.findById(doc._id)
     .populate('clientId')

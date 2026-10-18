@@ -75,6 +75,13 @@ const formatInvoice = (doc) => {
       scheduledEndAt: raw.scheduledEndAt || null,
     };
   });
+  if (!item.dueDate && doc.periodTo) {
+    const due = new Date(`${doc.periodTo}T12:00:00`);
+    if (!Number.isNaN(due.getTime())) {
+      due.setDate(due.getDate() + 30);
+      item.dueDate = due;
+    }
+  }
   return item;
 };
 
@@ -157,6 +164,7 @@ const getAll = async (req, query = {}) => {
           clientEmail: 1,
           periodFrom: 1,
           periodTo: 1,
+          dueDate: 1,
           status: 1,
           total: 1,
           subtotal: 1,
@@ -168,7 +176,23 @@ const getAll = async (req, query = {}) => {
     ]),
   ]);
 
+  const openInvoices = await Model.ClientInvoiceModel.find({
+    agencyId,
+    status: { $in: ['Draft', 'Sent'] },
+  }).select('dueDate periodTo').lean();
+  let nextDueDate = null;
+  openInvoices.forEach((doc) => {
+    let due = doc.dueDate ? new Date(doc.dueDate) : null;
+    if ((!due || Number.isNaN(due.getTime())) && doc.periodTo) {
+      due = new Date(`${doc.periodTo}T12:00:00`);
+      if (!Number.isNaN(due.getTime())) due.setDate(due.getDate() + 30);
+    }
+    if (!due || Number.isNaN(due.getTime())) return;
+    if (!nextDueDate || due < nextDueDate) nextDueDate = due;
+  });
+
   return {
+    nextDueDate,
     list: list.map((doc) => ({
       id: String(doc._id),
       invoiceCode: doc.invoiceCode || '',
@@ -177,6 +201,13 @@ const getAll = async (req, query = {}) => {
       clientEmail: doc.clientEmail || '',
       periodFrom: doc.periodFrom || '',
       periodTo: doc.periodTo || '',
+      dueDate: doc.dueDate || (() => {
+        if (!doc.periodTo) return null;
+        const due = new Date(`${doc.periodTo}T12:00:00`);
+        if (Number.isNaN(due.getTime())) return null;
+        due.setDate(due.getDate() + 30);
+        return due;
+      })(),
       status: doc.status || 'Draft',
       total: doc.total || 0,
       subtotal: doc.subtotal || 0,
@@ -252,6 +283,12 @@ const generateDraft = async (req, payload) => {
     agencyAddress: formatAgencyAddress(agency),
     periodFrom,
     periodTo,
+    dueDate: (() => {
+      const due = new Date(`${periodTo}T12:00:00`);
+      if (Number.isNaN(due.getTime())) return null;
+      due.setDate(due.getDate() + 30);
+      return due;
+    })(),
     status: 'Draft',
     lines,
     subtotal,
@@ -279,6 +316,87 @@ const formatClock = (iso, timeZone) => {
   } catch {
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
+};
+
+const pdfEscape = (value) => String(value ?? '')
+  .replace(/\\/g, '\\\\')
+  .replace(/\(/g, '\\(')
+  .replace(/\)/g, '\\)')
+  .replace(/[^\x20-\x7E]/g, ' ');
+
+/** Minimal multi-page PDF so the invoice can be attached without a PDF library. */
+const buildPlainPdf = (lines) => {
+  const pageSize = 42;
+  const pages = [];
+  for (let i = 0; i < lines.length; i += pageSize) pages.push(lines.slice(i, i + pageSize));
+  if (!pages.length) pages.push(['Invoice']);
+
+  const objects = [];
+  const add = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+
+  const fontId = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const pageIds = pages.map((pageLines) => {
+    const stream = pageLines.map((line, index) => (
+      `BT /F1 11 Tf 48 ${760 - index * 16} Td (${pdfEscape(line).slice(0, 95)}) Tj ET`
+    )).join('\n');
+    const contentId = add(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+    return add(`<< /Type /Page /Parent PAGES /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`);
+  });
+  const pagesId = add(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`);
+  const catalogId = add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  const withParent = objects.map((body) => body.replace('Parent PAGES', `Parent ${pagesId} 0 R`));
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  withParent.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${withParent.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${withParent.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf);
+};
+
+const buildInvoicePdf = (invoice) => {
+  const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+  const due = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-US') : '—';
+  const lines = [
+    'CareTraker',
+    'INVOICE',
+    '',
+    `Invoice #: ${invoice.invoiceCode || ''}`,
+    `Status: ${invoice.status || ''}`,
+    `Period: ${invoice.periodFrom || ''} - ${invoice.periodTo || ''}`,
+    `Due date: ${due}`,
+    '',
+    `From: ${invoice.agencyName || ''}`,
+    invoice.agencyAddress || '',
+    invoice.agencyEmail || '',
+    invoice.agencyPhone || '',
+    '',
+    `Bill to: ${invoice.clientName || ''}`,
+    invoice.clientAddress || '',
+    invoice.clientEmail || '',
+    '',
+    'Date        Service                  Hours    Amount',
+  ];
+  (invoice.lines || []).forEach((line) => {
+    lines.push(
+      `${String(line.date || '').slice(0, 10).padEnd(12)}${String(line.serviceArea || 'Service').slice(0, 22).padEnd(24)}${Number(line.billableHours || 0).toFixed(2).padStart(6)}  ${money(line.amount)}`,
+    );
+    if (line.caregiverName) lines.push(`            ${line.caregiverName}`);
+  });
+  lines.push('');
+  lines.push(`Total due: ${money(invoice.total)}`);
+  if (invoice.notes) lines.push(`Notes: ${invoice.notes}`);
+  return buildPlainPdf(lines.filter((line) => line !== undefined));
 };
 
 const sendInvoice = async (req, id) => {
@@ -310,6 +428,7 @@ const sendInvoice = async (req, id) => {
     subject: `Invoice ${invoice.invoiceCode} from ${agency?.name || invoice.agencyName || 'CareTraker'}`,
     message: [
       `Please find your invoice ${invoice.invoiceCode} for ${invoice.periodFrom} to ${invoice.periodTo}.`,
+      'The invoice PDF is attached to this email.',
       '',
       'Visit details:',
       linesText,
@@ -319,6 +438,11 @@ const sendInvoice = async (req, id) => {
       invoice.notes ? `\nNotes: ${invoice.notes}` : '',
     ].filter(Boolean).join('\n'),
     senderName: sender?.fullName || sender?.name || '',
+    attachments: [{
+      filename: `${invoice.invoiceCode || 'invoice'}.pdf`,
+      content: buildInvoicePdf(invoice),
+      contentType: 'application/pdf',
+    }],
   });
 
   invoice.status = 'Sent';

@@ -45,6 +45,8 @@ module.exports = {
     date_of_birth: Joi.alternatives().try(Joi.date(), Joi.string().allow('')).optional(),
     summary: Joi.string().allow('').optional(),
     skills: Joi.string().allow('').optional(),
+    job_id: Joi.string().allow('').optional(),
+    document_codes: Joi.alternatives().try(documentCodes, Joi.string().allow('')).optional(),
   }),
   setStage: Joi.object({
     stage_id: Joi.string().required(),

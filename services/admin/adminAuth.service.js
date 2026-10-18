@@ -13,6 +13,7 @@ const {
   DEFAULT_HR_MODULES,
 } = require('../../common/agencyModules');
 const { buildUploadUrl } = require('../../common/candidateHelpers');
+const { recordCaregiverActivity } = require('../../common/caregiverActivity');
 const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 const { isAgencyLoginBlocked } = require('../../common/agencyVisibility');
 const {
@@ -175,6 +176,22 @@ const login = async (req) => {
   account.lastLoginAt = new Date();
   await account.save();
 
+  if (account.role === 'CAREGIVER') {
+    const agency = account.agencyId;
+    recordCaregiverActivity({
+      agencyId: agency?._id || agency,
+      agencyName: agency?.name || '',
+      caregiverAccountId: account._id,
+      caregiverName: account.fullName || '',
+      activityType: 'Session',
+      action: 'session.sign_in',
+      activity: 'Sign in',
+      related: 'Platform session',
+      detail: 'Successful login',
+      status: 'Success',
+    });
+  }
+
   const user = await formatAgencyUser(account);
   user.isFirstLogin = isFirstLogin;
 
@@ -329,6 +346,22 @@ const updateProfile = async (req, payload = {}) => {
   }
 
   await account.save();
+
+  if (account.role === 'CAREGIVER') {
+    const agency = account.agencyId;
+    recordCaregiverActivity({
+      agencyId: agency?._id || agency,
+      agencyName: agency?.name || '',
+      caregiverAccountId: account._id,
+      caregiverName: account.fullName || '',
+      activityType: 'Profile',
+      action: 'profile.updated',
+      activity: 'Profile updated',
+      related: 'Caregiver profile',
+      detail: 'Profile details saved',
+      status: 'Recorded',
+    });
+  }
 
   if (account.role === 'HR') {
     const hrStaff = await Model.HrStaffModel.findOne({ accountId: account._id });

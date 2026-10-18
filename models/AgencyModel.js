@@ -30,6 +30,8 @@ const AgencySchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     city: { type: String, default: '' },
     state: { type: String, default: '' },
+    ein: { type: String, default: '' },
+    timezone: { type: String, default: '' },
     ownerName: { type: String, default: '' },
     agencyType: { type: String, default: '' },
     yearEstablished: { type: String, default: '' },

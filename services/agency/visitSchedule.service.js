@@ -1,4 +1,5 @@
 const Model = require('../../models/index');
+const { recordCaregiverActivity } = require('../../common/caregiverActivity');
 const { ensureCoverageEnrollment } = require('./evvEnrollment.service');
 const constants = require('../../common/constants');
 const functions = require('../../common/functions');
@@ -900,6 +901,20 @@ const createSchedule = async (req, payload) => {
     generated_visits: generatedVisits,
   };
 
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiver._id,
+    caregiverName,
+    activityType: 'Schedule',
+    action: 'schedule.created',
+    activity: 'Schedule created',
+    related: clientName ? `Client: ${clientName}` : '',
+    detail: `${dateKeys.length} day(s), ${payload.start_time}–${payload.end_time}`,
+    status: 'Completed',
+    entityType: 'VisitSchedule',
+    entityId: createdSchedules[0]?._id,
+  });
+
   emitScheduleCreatedNotification({
     agencyId,
     clientName,
@@ -1717,6 +1732,20 @@ const checkInVisit = async (req, visitId, payload = {}) => {
   }
   await visit.save();
 
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiver._id || caregiver.id,
+    caregiverName: caregiver.fullName || caregiver.name || visit.caregiverName || '',
+    activityType: 'Worklog',
+    action: 'visit.check_in',
+    activity: 'Worklog check-in',
+    related: visit.clientName ? `Client: ${visit.clientName}` : '',
+    detail: late ? 'Late check-in' : 'Check-in recorded',
+    status: 'Recorded',
+    entityType: 'Visit',
+    entityId: visit._id,
+  });
+
   emitVisitClockNotification({
     agencyId,
     visit,
@@ -1785,6 +1814,20 @@ const checkOutVisit = async (req, visitId, payload = {}) => {
   visit.rejectionReason = '';
   visit.approvalNotes = '';
   await visit.save();
+
+  recordCaregiverActivity({
+    agencyId,
+    caregiverAccountId: caregiver._id || caregiver.id,
+    caregiverName: caregiver.fullName || caregiver.name || visit.caregiverName || '',
+    activityType: 'Worklog',
+    action: 'visit.check_out',
+    activity: 'Worklog check-out',
+    related: visit.clientName ? `Client: ${visit.clientName}` : '',
+    detail: 'Check-out recorded',
+    status: 'Recorded',
+    entityType: 'Visit',
+    entityId: visit._id,
+  });
 
   emitVisitClockNotification({
     agencyId,
