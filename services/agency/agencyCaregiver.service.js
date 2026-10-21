@@ -132,6 +132,33 @@ const formatCaregiver = async (account, agencyId) => {
   if (!client.phone && candidate?.phone) client.phone = candidate.phone;
   client.experience = candidate?.experience || '';
 
+  const schedules = await Model.VisitScheduleModel.find({
+    caregiverAccountId: account._id,
+    agencyId,
+    status: 'Active',
+  }).select('clientId clientName').lean();
+  const seenClients = new Set();
+  const assignedClients = [];
+  schedules.forEach((row) => {
+    const id = String(row.clientId || '');
+    if (!id || seenClients.has(id)) return;
+    seenClients.add(id);
+    assignedClients.push({ id, name: row.clientName || '' });
+  });
+  const missingNames = assignedClients.filter((row) => !row.name).map((row) => row.id);
+  if (missingNames.length) {
+    const docs = await Model.ClientModel.find({ _id: { $in: missingNames } })
+      .select('firstName lastName')
+      .lean();
+    const names = new Map(
+      docs.map((doc) => [String(doc._id), `${doc.firstName || ''} ${doc.lastName || ''}`.trim()]),
+    );
+    assignedClients.forEach((row) => {
+      if (!row.name) row.name = names.get(row.id) || '';
+    });
+  }
+  client.clients = assignedClients.filter((row) => row.name);
+
   return client;
 };
 
@@ -307,4 +334,5 @@ module.exports = {
   update,
   updateStatus,
   sendEmail,
+  resolveJobContext,
 };

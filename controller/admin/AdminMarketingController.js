@@ -1,6 +1,8 @@
 const constants = require('../../common/constants');
+const functions = require('../../common/functions');
 const MailchimpService = require('../../services/common/mailchimp.service');
 const AdminMarketingAudienceService = require('../../services/admin/adminMarketingAudience.service');
+const EmailPreferenceService = require('../../services/common/emailPreference.service');
 
 module.exports.getPlatformAudience = async (req, res, next) => {
   try {
@@ -35,7 +37,11 @@ module.exports.sendCampaign = async (req, res, next) => {
     const html = String(req.body.html || '').trim();
     const fromName = String(req.body.fromName || 'CareTracker').trim();
     const replyTo = String(req.body.fromEmail || req.body.replyTo || '').trim();
-    const recipients = Array.isArray(req.body.recipients) ? req.body.recipients.slice(0, 100) : [];
+    const incoming = Array.isArray(req.body.recipients) ? req.body.recipients : [];
+    const blocked = await EmailPreferenceService.blockedEmails(incoming.map((person) => person?.email));
+    const recipients = incoming
+      .filter((person) => person?.email && !blocked.has(String(person.email).trim().toLowerCase()))
+      .slice(0, 100);
     if (!subject || !html) throw new Error('Subject and email content are required');
     if (!replyTo) throw new Error('A Mailchimp from email is required');
     if (!recipients.length) throw new Error('This campaign has no recipients to send to');
@@ -46,6 +52,7 @@ module.exports.sendCampaign = async (req, res, next) => {
       fromName,
       replyTo,
       recipients,
+      apiBaseUrl: functions.getApiBaseUrl(req),
     });
     return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {

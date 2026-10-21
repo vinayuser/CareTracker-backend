@@ -1,3 +1,59 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const parseDataImage = (value) => {
+  const match = String(value || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mime: match[1], buffer: Buffer.from(match[2], 'base64') };
+};
+
+const extFromMime = (mime = '') => {
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('gif')) return 'gif';
+  if (mime.includes('webp')) return 'webp';
+  return 'jpg';
+};
+
+const hostImageLocally = (filename, buffer, apiBase) => {
+  const dir = path.join(__dirname, '../../uploads/email');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), buffer);
+  const base = String(apiBase || '').replace(/\/+$/, '') || '';
+  return `${base}/api/uploads/email/${filename}`;
+};
+
+const uploadImageToMailchimp = async (filename, buffer) => {
+  const uploaded = await request('/file-manager/files', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: filename,
+      file_data: buffer.toString('base64'),
+    }),
+  });
+  return uploaded.full_size_url || uploaded.url || '';
+};
+
+const replaceDataImages = async (html, apiBase) => {
+  const matches = String(html || '').match(/src="(data:image\/[a-zA-Z0-9.+-]+;base64,[^"]+)"/g) || [];
+  let next = html;
+  for (const attr of matches) {
+    const dataUrl = attr.slice(5, -1);
+    const parsed = parseDataImage(dataUrl);
+    if (!parsed) continue;
+    const filename = `campaign-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${extFromMime(parsed.mime)}`;
+    let url = '';
+    try {
+      url = await uploadImageToMailchimp(filename, parsed.buffer);
+    } catch (err) {
+      console.error('[mailchimp] image upload failed', err.message);
+    }
+    if (!url) url = hostImageLocally(filename, parsed.buffer, apiBase);
+    if (url) next = next.split(dataUrl).join(url);
+  }
+  return next;
+};
+
 const getConfig = () => {
   const apiKey = String(process.env.MAILCHIMP_API_KEY || '').trim();
   const server = String(process.env.MAILCHIMP_SERVER || apiKey.split('-').pop() || '').trim();
@@ -78,7 +134,7 @@ const ensureList = async ({ fromName, replyTo }) => {
   return created.id;
 };
 
-const sendCampaign = async ({ subject, html, fromName, replyTo, recipients }) => {
+const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiBaseUrl }) => {
   const listId = await ensureList({ fromName, replyTo });
   const when = new Date().toLocaleString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -140,9 +196,10 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients }) =>
     }),
   });
 
+  const htmlWithImages = await replaceDataImages(html, apiBaseUrl);
   await request(`/campaigns/${campaign.id}/content`, {
     method: 'PUT',
-    body: JSON.stringify({ html }),
+    body: JSON.stringify({ html: htmlWithImages }),
   });
 
   await request(`/campaigns/${campaign.id}/actions/send`, { method: 'POST' });

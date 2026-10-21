@@ -6,6 +6,7 @@ const { resolveProfilePicPath } = require('../../common/profilePicUpload');
 const { assertLoginIdentifiersAvailable } = require('../../common/emailAvailability');
 const { notArchivedFilter } = require('../../common/agencyVisibility');
 const { CARE_OVERVIEW_CATEGORIES } = require('../../common/carePlanConstants');
+const AgencyCaregiverService = require('../agency/agencyCaregiver.service');
 
 const toOid = (value) => {
   if (!value) return null;
@@ -361,7 +362,10 @@ const getOverview = async (id, req) => {
   if (!account) throw new Error('Caregiver Not Found');
 
   const now = new Date();
-  const agency = await Model.AgencyModel.findById(account.agencyId).select('name').lean();
+  const [agency, jobContext] = await Promise.all([
+    Model.AgencyModel.findById(account.agencyId).select('name').lean(),
+    AgencyCaregiverService.resolveJobContext(account, account.agencyId),
+  ]);
 
   const [documents, upcomingRows, nextRow, scheduleRows] = await Promise.all([
     getCaregiverDocuments(account, req),
@@ -483,6 +487,8 @@ const getOverview = async (id, req) => {
       status: account.status || 'Pending',
       profilePic: account.profilePicPath ? buildUploadUrl(account.profilePicPath, req) : '',
       createdAt: account.createdAt || null,
+      sourceJobId: jobContext.jobId ? String(jobContext.jobId) : '',
+      source_job_title: jobContext.jobTitle || '',
     },
     clients: associatedClients,
     documents,

@@ -326,6 +326,11 @@ const getDashboard = async () => {
     .filter((inv) => ['Pending', 'Overdue'].includes(inv.status))
     .reduce((s, inv) => s + (Number(inv.total) || 0), 0);
   const overdueCount = subInvoices.filter((inv) => inv.status === 'Overdue').length;
+  const unpaidInvoiceCount = subInvoices.filter((inv) => ['Pending', 'Overdue'].includes(inv.status)).length;
+  const dbConnected = Model.AgencyModel.db?.readyState === 1;
+  const mem = process.memoryUsage();
+  const rssMb = Math.round((mem.rss || 0) / 1024 / 1024);
+  const heapMb = Math.round((mem.heapUsed || 0) / 1024 / 1024);
 
   const mrr = activeAgencies.reduce((s, a) => s + monthlyFromPlan(a.subscriptionPlanId), 0);
   const monthlyRevenue = paidThisMonth || mrr;
@@ -503,7 +508,7 @@ const getDashboard = async () => {
   const tasks = [
     { id: 'approve', label: 'Agencies awaiting approval', count: pendingAgencies.length, to: '/admin/agencies' },
     { id: 'invites', label: 'Open invitations', count: pendingInvites, to: '/admin/invitations' },
-    { id: 'unpaid', label: 'Unpaid subscription invoices', count: subInvoices.filter((i) => ['Pending', 'Overdue'].includes(i.status)).length, to: '/admin/billing-claims' },
+    { id: 'unpaid', label: 'Unpaid subscription invoices', count: unpaidInvoiceCount, to: '/admin/billing-claims' },
     { id: 'missed', label: 'Missed visits', count: missedVisits, to: '/admin/evv-compliance' },
     { id: 'enroll', label: 'Pending EVV enrollments', count: pendingEnrollments, to: '/admin/evv-compliance' },
     { id: 'plans', label: 'Active subscription plans', count: plans.filter((p) => p.status === 'Active').length, to: '/admin/subscription-plans' },
@@ -559,6 +564,42 @@ const getDashboard = async () => {
     health,
     insights,
     alerts,
+    operations: {
+      pendingAgencies: pendingAgencies.length,
+      pendingInvites,
+      missedVisits,
+      pendingEnrollments,
+      unpaidInvoices: unpaidInvoiceCount,
+      visitsThisMonth: visitMonthCounts,
+    },
+    system: {
+      uptime: formatUptime(process.uptime()),
+      node: process.version,
+      memory: `${rssMb} MB`,
+      heap: `${heapMb} MB`,
+      database: dbConnected ? 'Connected' : 'Disconnected',
+      api: 'Online',
+      pid: process.pid,
+    },
+    systemAlerts: [
+      ...(!dbConnected
+        ? [{ id: 'db', title: 'Database is disconnected', time: 'Runtime', tone: 'danger' }]
+        : []),
+      ...suspendedAgencies.map((a) => ({
+        id: `sus-${a._id}`,
+        title: `${a.name} is suspended`,
+        time: 'Action needed',
+        tone: 'danger',
+      })),
+      ...(overdueCount
+        ? [{
+            id: 'overdue-invoices',
+            title: `${overdueCount} overdue subscription invoice${overdueCount === 1 ? '' : 's'}`,
+            time: 'Billing',
+            tone: 'danger',
+          }]
+        : []),
+    ],
     tasks,
     recentActivity,
     finance: {

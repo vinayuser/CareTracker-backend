@@ -172,6 +172,49 @@ const getLiveUsage = async (agencyId, agency) => {
   };
 };
 
+const countByAgencyId = (rows) => {
+  const map = {};
+  rows.forEach((row) => {
+    map[String(row._id)] = row.count;
+  });
+  return map;
+};
+
+const attachLiveUsage = async (agencies) => {
+  if (!agencies.length) return [];
+  const ids = agencies.map((agency) => agency._id);
+  const [clientRows, caregiverRows, userRows] = await Promise.all([
+    Model.ClientModel.aggregate([
+      { $match: { agencyId: { $in: ids } } },
+      { $group: { _id: '$agencyId', count: { $sum: 1 } } },
+    ]),
+    Model.AgencyAccountModel.aggregate([
+      { $match: { agencyId: { $in: ids }, role: 'CAREGIVER' } },
+      { $group: { _id: '$agencyId', count: { $sum: 1 } } },
+    ]),
+    Model.AgencyAccountModel.aggregate([
+      { $match: { agencyId: { $in: ids }, role: { $in: ['AGENCY_OWNER', 'HR', 'CAREGIVER'] } } },
+      { $group: { _id: '$agencyId', count: { $sum: 1 } } },
+    ]),
+  ]);
+  const clientsMap = countByAgencyId(clientRows);
+  const caregiversMap = countByAgencyId(caregiverRows);
+  const usersMap = countByAgencyId(userRows);
+
+  return agencies.map((agency) => {
+    const formatted = formatAgency(agency);
+    const id = String(agency._id);
+    const serviceAreaCount = Array.isArray(agency.serviceAreas) ? agency.serviceAreas.length : 0;
+    formatted.usage = {
+      clients: clientsMap[id] || 0,
+      caregivers: caregiversMap[id] || 0,
+      users: usersMap[id] || 0,
+      branches: serviceAreaCount || agency.usage?.branches || 0,
+    };
+    return formatted;
+  });
+};
+
 const getTopCaregivers = async (agencyId) => {
   const rows = await Model.AgencyAccountModel.find({ agencyId, role: 'CAREGIVER' })
     .select('fullName email phone status createdAt employeeId')
@@ -324,7 +367,7 @@ const getCaregivers = async (agencyId, query = {}) => {
 
 const getAll = async () => {
   const agencies = await Model.AgencyModel.find(notArchivedFilter()).sort({ createdAt: -1 });
-  return functions.toClientList(agencies).map(formatAgency);
+  return attachLiveUsage(agencies);
 };
 
 /** Lightweight dropdown list — id + name (+ status for badges). Excludes archived. */

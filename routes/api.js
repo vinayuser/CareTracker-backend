@@ -3,6 +3,10 @@ const Controller = require('../controller');
 const Auth = require('../common/authenticate');
 
 // Unified auth
+router.get('/email/preferences', Controller.EmailPreferenceController.getPreferences);
+router.post('/email/preferences', Controller.EmailPreferenceController.savePreferences);
+router.post('/email/unsubscribe', Controller.EmailPreferenceController.unsubscribe);
+
 router.post('/auth/login', Controller.AdminAuthController.login);
 router.post('/auth/forgot-password', Controller.AdminAuthController.forgotPassword);
 router.post('/auth/reset-password', Controller.AdminAuthController.resetPassword);
