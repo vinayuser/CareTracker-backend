@@ -15,11 +15,24 @@ const extFromMime = (mime = '') => {
   return 'jpg';
 };
 
+const publicAssetBase = (apiBase) => {
+  const fromEnv = String(
+    process.env.PUBLIC_APP_URL
+    || process.env.FRONTEND_URL
+    || process.env.API_BASE_URL
+    || process.env.BACKEND_URL
+    || '',
+  ).trim().replace(/\/+$/, '');
+  const fromReq = String(apiBase || '').trim().replace(/\/+$/, '');
+  const chosen = fromReq && !/localhost|127\.0\.0\.1/i.test(fromReq) ? fromReq : (fromEnv || fromReq);
+  return chosen.replace(/\/+$/, '');
+};
+
 const hostImageLocally = (filename, buffer, apiBase) => {
   const dir = path.join(__dirname, '../../uploads/email');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, filename), buffer);
-  const base = String(apiBase || '').replace(/\/+$/, '') || '';
+  const base = publicAssetBase(apiBase);
   return `${base}/api/uploads/email/${filename}`;
 };
 
@@ -31,14 +44,16 @@ const uploadImageToMailchimp = async (filename, buffer) => {
       file_data: buffer.toString('base64'),
     }),
   });
-  return uploaded.full_size_url || uploaded.url || '';
+  return uploaded.full_size_url || uploaded.url || uploaded.thumbnail_url || '';
 };
 
 const replaceDataImages = async (html, apiBase) => {
-  const matches = String(html || '').match(/src="(data:image\/[a-zA-Z0-9.+-]+;base64,[^"]+)"/g) || [];
-  let next = html;
-  for (const attr of matches) {
-    const dataUrl = attr.slice(5, -1);
+  const original = String(html || '');
+  const re = /src=(["'])(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+)\1/gi;
+  const matches = [...original.matchAll(re)];
+  let next = original;
+  for (const match of matches) {
+    const dataUrl = String(match[2] || '').replace(/\s+/g, '');
     const parsed = parseDataImage(dataUrl);
     if (!parsed) continue;
     const filename = `campaign-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${extFromMime(parsed.mime)}`;
@@ -49,7 +64,7 @@ const replaceDataImages = async (html, apiBase) => {
       console.error('[mailchimp] image upload failed', err.message);
     }
     if (!url) url = hostImageLocally(filename, parsed.buffer, apiBase);
-    if (url) next = next.split(dataUrl).join(url);
+    if (url) next = next.split(match[2]).join(url).split(dataUrl).join(url);
   }
   return next;
 };

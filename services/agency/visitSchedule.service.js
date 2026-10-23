@@ -23,7 +23,7 @@ const {
 
 const DEFAULT_HORIZON_DAYS = 42;
 const LATE_EXTRA_MS = LATE_CHECK_IN_EXTRA_MINUTES * 60 * 1000;
-const { getBlockingHolidayMap, leaveFieldsForDate } = require('./holidayLeaveVisits.service');
+const { leaveFieldsForDate, reconcileLeaveVisits, getApprovedLeaveRequestMap } = require('./holidayLeaveVisits.service');
 const NotificationService = require('../common/notification.service');
 const { sendScheduleAssignedEmail } = require('../common/mail.service');
 
@@ -115,6 +115,23 @@ const getAccountId = (req) => {
   const account = getAgencyAccount(req);
   return account?._id || account?.id || null;
 };
+
+const isInactiveCaregiver = (caregiver) => String(caregiver?.status || '') === 'Inactive';
+
+const requireAssignableCaregiver = (caregiver) => {
+  if (!caregiver) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+  if (isInactiveCaregiver(caregiver)) throw new Error(constants.MESSAGE.CAREGIVER.INACTIVE);
+  return caregiver;
+};
+
+const findAssignableCaregiver = async (agencyId, caregiverId) => {
+  const caregiver = await Model.AgencyAccountModel.findOne({
+    _id: caregiverId,
+    agencyId,
+    role: 'CAREGIVER',
+  });
+  return requireAssignableCaregiver(caregiver);
+};
 const getCaregiverAccount = (req) => {
   const account = req.caregiver;
   if (!account) throw new Error('Caregiver account not found');
@@ -139,6 +156,12 @@ const resolveTimezone = (tz) => {
 };
 
 const pad2 = (n) => String(n).padStart(2, '0');
+
+const normalizeHm = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return String(value || '').trim();
+  return `${pad2(Number(match[1]))}:${match[2]}`;
+};
 
 /** Local calendar date key in a timezone (prefer visit/schedule zone). */
 const toDateKey = (date, timeZone = DEFAULT_TIMEZONE) => dateKeyInZone(date, timeZone);
@@ -209,6 +232,53 @@ const formatCode = (prefix, num) => `${prefix}-${String(num).padStart(5, '0')}`;
 
 
 const isDuplicateKeyError = (err) => err?.code === 11000 || /duplicate key/i.test(String(err?.message || ''));
+
+const DELETABLE_VISIT_STATUSES = ['Scheduled', 'Late', 'Missed', 'Cancelled', 'Leave', 'Exception'];
+const PROTECTED_VISIT_STATUSES = ['InProgress', 'Completed'];
+
+const purgeStaleVisitsForDates = async ({ agencyId, caregiverAccountId, clientId, dateKeys }) => {
+  if (!dateKeys?.length) return 0;
+  const visits = await Model.VisitModel.find({
+    agencyId,
+    scheduledDate: { $in: dateKeys },
+    checkInAt: null,
+    invoiced: { $ne: true },
+    status: { $nin: PROTECTED_VISIT_STATUSES },
+    $or: [{ caregiverAccountId }, { clientId }],
+  }).select('_id status scheduleId').lean();
+  if (!visits.length) return 0;
+
+  const scheduleIds = [...new Set(visits.map((row) => row.scheduleId).filter(Boolean))];
+  const liveIds = new Set(
+    (await Model.VisitScheduleModel.find({ _id: { $in: scheduleIds } }).select('_id').lean())
+      .map((row) => String(row._id)),
+  );
+
+  const staleIds = visits
+    .filter((row) => (
+      row.status === 'Cancelled'
+      || !row.scheduleId
+      || !liveIds.has(String(row.scheduleId))
+    ))
+    .map((row) => row._id);
+  if (!staleIds.length) return 0;
+
+  const result = await Model.VisitModel.deleteMany({ _id: { $in: staleIds } });
+  return result.deletedCount || 0;
+};
+
+const deleteOpenVisitsForSchedules = async (agencyId, scheduleIds) => {
+  const ids = [...new Set((scheduleIds || []).filter(Boolean))];
+  if (!ids.length) return 0;
+  const result = await Model.VisitModel.deleteMany({
+    agencyId,
+    scheduleId: { $in: ids },
+    checkInAt: null,
+    invoiced: { $ne: true },
+    status: { $in: DELETABLE_VISIT_STATUSES },
+  });
+  return result.deletedCount || 0;
+};
 
 const friendlyDuplicateError = (err) => {
   if (!isDuplicateKeyError(err)) return null;
@@ -289,7 +359,9 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
   item.canCheckIn = !item.checkInAt && ['Scheduled', 'Late', 'Missed'].includes(item.status);
   if (item.status === 'Leave') {
     item.canCheckIn = false;
-    item.clockBlockReason = constants.MESSAGE.VISIT.ON_LEAVE;
+    item.clockBlockReason = item.leaveLabel
+      ? `You cannot clock in — ${item.leaveLabel}`
+      : constants.MESSAGE.VISIT.ON_LEAVE;
   }
   item.canCheckOut = Boolean(item.checkInAt) && !item.checkOutAt && ['InProgress', 'Exception'].includes(item.status);
   if (item.checkOutAt && (!item.approvalStatus || item.approvalStatus === 'None')) {
@@ -313,7 +385,9 @@ const formatVisit = (doc, { now = new Date() } = {}) => {
     && (!lateUntil || now <= lateUntil),
   );
   if (item.status === 'Leave') {
-    item.clockBlockReason = constants.MESSAGE.VISIT.ON_LEAVE;
+    item.clockBlockReason = item.leaveLabel
+      ? `You cannot clock in — ${item.leaveLabel}`
+      : constants.MESSAGE.VISIT.ON_LEAVE;
   } else if (item.canCheckIn && earliest && now < earliest) {
     item.clockBlockReason = constants.MESSAGE.VISIT.TOO_EARLY;
   } else if (item.canCheckIn && lateUntil && now > lateUntil) {
@@ -490,17 +564,21 @@ const applyLeaveToPayload = (payload, holidayMap, dateKey) => {
   return { ...payload, ...leave };
 };
 
-/** Recompute UTC windows for future Scheduled visits after time/timezone edits */
-const refreshFutureVisitWindows = async (schedule) => {
-  const tz = resolveTimezone(schedule.timezone);
-  const todayKey = dateKeyInZone(new Date(), tz);
+const OPEN_WINDOW_STATUSES = ['Scheduled', 'Late', 'Missed', 'Leave', 'Exception'];
+
+/** Recompute UTC windows on open (not clocked) visits after time/timezone edits */
+const refreshVisitWindowsForSchedules = async (schedules) => {
+  const list = (Array.isArray(schedules) ? schedules : [schedules]).filter(Boolean);
+  if (!list.length) return 0;
+  const byId = new Map(list.map((row) => [String(row._id), row]));
   const visits = await Model.VisitModel.find({
-    scheduleId: schedule._id,
-    status: { $in: ['Scheduled', 'Late'] },
-    scheduledDate: { $gte: todayKey },
+    scheduleId: { $in: list.map((row) => row._id) },
+    status: { $in: OPEN_WINDOW_STATUSES },
     checkInAt: null,
   });
   for (const visit of visits) {
+    const schedule = byId.get(String(visit.scheduleId));
+    if (!schedule) continue;
     const window = buildVisitWindow(schedule, visit.scheduledDate);
     visit.timezone = window.timezone;
     visit.scheduledStartAt = window.scheduledStartAt;
@@ -514,6 +592,10 @@ const refreshFutureVisitWindows = async (schedule) => {
   return visits.length;
 };
 
+const refreshFutureVisitWindows = async (schedule) => (
+  refreshVisitWindowsForSchedules([schedule])
+);
+
 const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HORIZON_DAYS } = {}) => {
   if (!schedule || schedule.status !== 'Active') return { created: 0, visits: [] };
 
@@ -524,10 +606,12 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
       : dateKeyInZone(fromDate, tz))
     : dateKeyInZone(new Date(), tz);
   const created = [];
-  const holidayMap = await getBlockingHolidayMap(
+  const endKey = addDaysToDateKey(startKey, days - 1);
+  const leaveByDate = await getApprovedLeaveRequestMap(
     schedule.agencyId,
+    schedule.caregiverAccountId,
     startKey,
-    addDaysToDateKey(startKey, days - 1),
+    endKey,
   );
 
   for (let i = 0; i < days; i += 1) {
@@ -538,7 +622,13 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
       scheduleId: schedule._id,
       scheduledDate: dateKey,
     });
-    if (existing) continue;
+    if (existing) {
+      if (existing.status === 'Cancelled' && !existing.checkInAt && !existing.invoiced) {
+        await existing.deleteOne();
+      } else {
+        continue;
+      }
+    }
 
     let visit = null;
     let lastError;
@@ -546,7 +636,7 @@ const generateVisitsForSchedule = async (schedule, { fromDate, days = DEFAULT_HO
       try {
         const visitCode = await generateVisitCode(schedule.agencyId);
         visit = await Model.VisitModel.create(
-          applyLeaveToPayload(buildVisitPayload(schedule, dateKey, visitCode), holidayMap, dateKey),
+          applyLeaveToPayload(buildVisitPayload(schedule, dateKey, visitCode), leaveByDate, dateKey),
         );
         break;
       } catch (err) {
@@ -726,12 +816,7 @@ const createSchedule = async (req, payload) => {
   const client = await Model.ClientModel.findOne({ _id: clientId, agencyId });
   if (!client) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
 
-  const caregiver = await Model.AgencyAccountModel.findOne({
-    _id: payload.caregiver_account_id,
-    agencyId,
-    role: 'CAREGIVER',
-  });
-  if (!caregiver) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+  const caregiver = await findAssignableCaregiver(agencyId, payload.caregiver_account_id);
 
   const recurrenceType = payload.recurrence_type;
   if (!RECURRENCE_TYPES.includes(recurrenceType)) {
@@ -751,6 +836,8 @@ const createSchedule = async (req, payload) => {
     throw new Error('No visit days fall in the selected date range');
   }
 
+  payload.start_time = normalizeHm(payload.start_time);
+  payload.end_time = normalizeHm(payload.end_time);
   if (String(payload.start_time) === String(payload.end_time)) {
     throw new Error(constants.MESSAGE.VISIT.INVALID_TIME_RANGE);
   }
@@ -761,6 +848,13 @@ const createSchedule = async (req, payload) => {
   const accountId = getAccountId(req);
   const clientName = `${client.firstName || ''} ${client.lastName || ''}`.trim();
   const caregiverName = caregiver.fullName || '';
+
+  await purgeStaleVisitsForDates({
+    agencyId,
+    caregiverAccountId: caregiver._id,
+    clientId: client._id,
+    dateKeys,
+  });
 
   await assertNoScheduleTimeConflicts({
     agencyId,
@@ -774,8 +868,9 @@ const createSchedule = async (req, payload) => {
   });
 
   // Bulk path: allocate codes once, insertMany schedules + visits (avoids N× sequential DB round-trips / timeouts)
-  const holidayMap = await getBlockingHolidayMap(
+  const leaveByDate = await getApprovedLeaveRequestMap(
     agencyId,
+    caregiver._id,
     dateKeys[0],
     dateKeys[dateKeys.length - 1],
   );
@@ -815,8 +910,6 @@ const createSchedule = async (req, payload) => {
   try {
     createdSchedules = await Model.VisitScheduleModel.insertMany(scheduleDocs, { ordered: true });
   } catch (err) {
-    const friendly = friendlyDuplicateError(err);
-    if (friendly) throw new Error(friendly);
     // Race on scheduleCode — fall back to sequential create (slower but safe)
     if (isDuplicateKeyError(err)) {
       const schedules = [];
@@ -860,6 +953,8 @@ const createSchedule = async (req, payload) => {
       });
       return fallbackResult;
     }
+    const friendly = friendlyDuplicateError(err);
+    if (friendly) throw new Error(friendly);
     throw err;
   }
 
@@ -868,7 +963,7 @@ const createSchedule = async (req, payload) => {
     const visitCode = formatCode('VST', visitNum++);
     return applyLeaveToPayload(
       buildVisitPayload(schedule, dateKey, visitCode),
-      holidayMap,
+      leaveByDate,
       dateKey,
     );
   });
@@ -935,17 +1030,38 @@ const createSchedule = async (req, payload) => {
 };
 
 
+const occurrenceDateKeys = (row) => {
+  const keys = [];
+  let cur = row.effectiveFrom;
+  const to = row.effectiveTo || row.effectiveFrom;
+  while (cur && to && cur <= to) {
+    if (occursOnDateKey(row, cur)) keys.push(cur);
+    cur = addDaysToDateKey(cur, 1);
+    if (keys.length > 400) break;
+  }
+  return keys;
+};
+
 const updateSchedule = async (req, id, payload) => {
   const agencyId = getAgencyId(req);
   const schedule = await Model.VisitScheduleModel.findOne({ _id: id, agencyId });
   if (!schedule) throw new Error(constants.MESSAGE.VISIT.SCHEDULE_NOT_FOUND);
 
+  const prevStart = normalizeHm(schedule.startTime);
+  const prevEnd = normalizeHm(schedule.endTime);
+  const prevTz = resolveTimezone(schedule.timezone);
+  const prevGrace = schedule.graceMinutes;
+  const prevCaregiverId = schedule.caregiverAccountId;
+
   if (payload.caregiver_account_id) {
-    const caregiver = await Model.AgencyAccountModel.findOne({
-      _id: payload.caregiver_account_id,
-      agencyId,
-      role: 'CAREGIVER',
-    });
+    const sameCaregiver = String(payload.caregiver_account_id) === String(schedule.caregiverAccountId);
+    const caregiver = sameCaregiver
+      ? await Model.AgencyAccountModel.findOne({
+          _id: payload.caregiver_account_id,
+          agencyId,
+          role: 'CAREGIVER',
+        })
+      : await findAssignableCaregiver(agencyId, payload.caregiver_account_id);
     if (!caregiver) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
     schedule.caregiverAccountId = caregiver._id;
     schedule.caregiverName = caregiver.fullName || '';
@@ -961,8 +1077,8 @@ const updateSchedule = async (req, id, payload) => {
     schedule.daysOfWeek = payload.days_of_week.filter((d) => WEEK_DAYS.includes(d));
   }
   if (payload.day_of_month != null) schedule.dayOfMonth = Number(payload.day_of_month) || null;
-  if (payload.start_time) schedule.startTime = payload.start_time;
-  if (payload.end_time) schedule.endTime = payload.end_time;
+  if (payload.start_time) schedule.startTime = normalizeHm(payload.start_time);
+  if (payload.end_time) schedule.endTime = normalizeHm(payload.end_time);
   if (payload.grace_minutes != null) {
     schedule.graceMinutes = Number(payload.grace_minutes) === 30 ? 30 : 15;
   }
@@ -982,16 +1098,35 @@ const updateSchedule = async (req, id, payload) => {
     throw new Error(constants.MESSAGE.VISIT.INVALID_TIME_RANGE);
   }
 
-  // Re-check caregiver/client overlaps for this schedule's occurrence days
+  const caregiverChanged = String(schedule.caregiverAccountId) !== String(prevCaregiverId);
+  const timeChanged = normalizeHm(schedule.startTime) !== prevStart
+    || normalizeHm(schedule.endTime) !== prevEnd
+    || resolveTimezone(schedule.timezone) !== prevTz
+    || Number(schedule.graceMinutes) !== Number(prevGrace);
+
+  let siblingSchedules = [];
+  if (timeChanged && !caregiverChanged) {
+    const siblingRows = await Model.VisitScheduleModel.find({
+      agencyId,
+      caregiverAccountId: prevCaregiverId,
+      clientId: schedule.clientId,
+      carePlanId: schedule.carePlanId,
+      status: { $in: ['Active', 'Paused'] },
+      _id: { $ne: schedule._id },
+    });
+    siblingSchedules = siblingRows.filter((row) => (
+      normalizeHm(row.startTime) === prevStart
+      && normalizeHm(row.endTime) === prevEnd
+      && resolveTimezone(row.timezone) === prevTz
+      && String(row.careNeedAreaKey || '') === String(schedule.careNeedAreaKey || '')
+    ));
+  }
+
   {
-    const conflictDates = [];
-    let cur = schedule.effectiveFrom;
-    const to = schedule.effectiveTo || schedule.effectiveFrom;
-    while (cur && to && cur <= to) {
-      if (occursOnDateKey(schedule, cur)) conflictDates.push(cur);
-      cur = addDaysToDateKey(cur, 1);
-      if (conflictDates.length > 400) break;
-    }
+    const conflictDates = [...new Set([
+      ...occurrenceDateKeys(schedule),
+      ...siblingSchedules.flatMap((row) => occurrenceDateKeys(row)),
+    ])];
     if (conflictDates.length) {
       await assertNoScheduleTimeConflicts({
         agencyId,
@@ -1002,16 +1137,39 @@ const updateSchedule = async (req, id, payload) => {
         endTime: schedule.endTime,
         timezone: schedule.timezone,
         graceMinutes: schedule.graceMinutes || 15,
-        excludeScheduleIds: [schedule._id],
+        excludeScheduleIds: [schedule._id, ...siblingSchedules.map((row) => row._id)],
       });
     }
   }
 
   await schedule.save();
 
+  if (siblingSchedules.length) {
+    await Model.VisitScheduleModel.updateMany(
+      { _id: { $in: siblingSchedules.map((row) => row._id) }, agencyId },
+      {
+        $set: {
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          timezone: schedule.timezone,
+          graceMinutes: schedule.graceMinutes,
+        },
+      },
+    );
+    siblingSchedules.forEach((row) => {
+      row.startTime = schedule.startTime;
+      row.endTime = schedule.endTime;
+      row.timezone = schedule.timezone;
+      row.graceMinutes = schedule.graceMinutes;
+    });
+  }
+
   let refreshed = 0;
-  if (['Active', 'Paused'].includes(schedule.status)) {
-    refreshed = await refreshFutureVisitWindows(schedule);
+  const toRefresh = ['Active', 'Paused'].includes(schedule.status)
+    ? [schedule, ...siblingSchedules]
+    : siblingSchedules;
+  if (toRefresh.length) {
+    refreshed = await refreshVisitWindowsForSchedules(toRefresh);
   }
 
   let generated = { created: 0 };
@@ -1068,10 +1226,11 @@ const removeSchedule = async (req, id) => {
   const schedule = await Model.VisitScheduleModel.findOne({ _id: id, agencyId });
   if (!schedule) throw new Error(constants.MESSAGE.VISIT.SCHEDULE_NOT_FOUND);
 
-  await Model.VisitModel.deleteMany({
-    scheduleId: schedule._id,
-    status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled'] },
-  });
+  await deleteOpenVisitsForSchedules(agencyId, [schedule._id]);
+  const remaining = await Model.VisitModel.countDocuments({ scheduleId: schedule._id });
+  if (remaining) {
+    throw new Error('Cannot delete this schedule while a visit is in progress or completed.');
+  }
   await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
   return { id: String(id) };
 };
@@ -1105,23 +1264,27 @@ const removeVisit = async (req, id, options = {}) => {
   );
 
   if (isSingleDaySchedule) {
-    await Model.VisitModel.deleteMany({
-      scheduleId: schedule._id,
-      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled', 'Leave'] },
-    });
-    await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
+    await deleteOpenVisitsForSchedules(agencyId, [schedule._id]);
+    const remaining = await Model.VisitModel.countDocuments({ scheduleId: schedule._id });
+    if (!remaining) {
+      await Model.VisitScheduleModel.deleteOne({ _id: schedule._id });
+    }
     return {
       id: String(id),
       schedule_id: String(schedule._id),
-      deleted_schedule: true,
+      deleted_schedule: !remaining,
       scope: 'day',
       deleted_count: 1,
     };
   }
 
-  // Legacy multi-day schedule: cancel this day only so regenerate will not recreate it
-  visit.status = 'Cancelled';
-  await visit.save();
+  // Legacy multi-day schedule: remove this day so it can be scheduled again
+  if (!visit.checkInAt && !visit.invoiced) {
+    await visit.deleteOne();
+  } else {
+    visit.status = 'Cancelled';
+    await visit.save();
+  }
   return {
     id: String(id),
     schedule_id: schedule ? String(schedule._id) : null,
@@ -1145,12 +1308,7 @@ const reassignCoverage = async (req, payload = {}) => {
   if (!visitIds.length) throw new Error('Select at least one visit day');
   if (!caregiverId) throw new Error('Select a replacement caregiver');
 
-  const replacement = await Model.AgencyAccountModel.findOne({
-    _id: caregiverId,
-    agencyId,
-    role: 'CAREGIVER',
-  });
-  if (!replacement) throw new Error(constants.MESSAGE.CAREGIVER.NOT_FOUND);
+  const replacement = await findAssignableCaregiver(agencyId, caregiverId);
 
   const visits = await Model.VisitModel.find({ _id: { $in: visitIds }, agencyId });
   if (visits.length !== visitIds.length) throw new Error('One or more visits were not found');
@@ -1207,6 +1365,13 @@ const reassignCoverage = async (req, payload = {}) => {
     visit.caregiverAccountId = replacement._id;
     visit.caregiverName = replacement.fullName || '';
     visit.coverageReason = reason;
+    if (visit.status === 'Leave' && visit.leaveSource !== 'holiday') {
+      visit.status = 'Scheduled';
+      visit.leaveSource = '';
+      visit.holidayId = null;
+      visit.leaveRequestId = null;
+      visit.leaveLabel = '';
+    }
     await visit.save();
 
     if (visit.scheduleId) {
@@ -1279,16 +1444,18 @@ const removeVisitSeries = async (req, visit, schedule) => {
 
   let deletedVisits = 0;
   if (deletableScheduleIds.length) {
-    const visitResult = await Model.VisitModel.deleteMany({
-      agencyId,
+    deletedVisits = await deleteOpenVisitsForSchedules(agencyId, deletableScheduleIds);
+    const leftover = await Model.VisitModel.find({
       scheduleId: { $in: deletableScheduleIds },
-      status: { $in: ['Scheduled', 'Missed', 'Late', 'Cancelled', 'Leave', 'Exception'] },
-    });
-    deletedVisits = visitResult.deletedCount || 0;
-    await Model.VisitScheduleModel.deleteMany({
-      _id: { $in: deletableScheduleIds },
-      agencyId,
-    });
+    }).select('scheduleId').lean();
+    const leftoverScheduleIds = new Set(leftover.map((row) => String(row.scheduleId)));
+    const emptyScheduleIds = deletableScheduleIds.filter((sid) => !leftoverScheduleIds.has(String(sid)));
+    if (emptyScheduleIds.length) {
+      await Model.VisitScheduleModel.deleteMany({
+        _id: { $in: emptyScheduleIds },
+        agencyId,
+      });
+    }
   }
 
   // Cancel remaining open visits on protected schedules that still match the series times
@@ -1311,6 +1478,7 @@ const removeVisitSeries = async (req, visit, schedule) => {
 };
 
 const VISIT_LIST_PROJECTION = {
+  agencyId: 1,
   visitCode: 1,
   scheduleId: 1,
   carePlanId: 1,
@@ -1337,6 +1505,10 @@ const VISIT_LIST_PROJECTION = {
   lateCheckIn: 1,
   exceptionReason: 1,
   notes: 1,
+  leaveSource: 1,
+  holidayId: 1,
+  leaveRequestId: 1,
+  leaveLabel: 1,
   isTimerRunning: 1,
   billableMinutes: 1,
   hourlyRateSnapshot: 1,
@@ -1479,6 +1651,7 @@ const getVisits = async (req, query = {}) => {
       .sort({ scheduledStartAt: 1 })
       .lean();
     await applyLiveCaregiverNames(list);
+    await reconcileLeaveVisits(list);
     return list.map((doc) => formatVisit(doc));
   }
 
@@ -1498,6 +1671,7 @@ const getVisits = async (req, query = {}) => {
   ]);
 
   await applyLiveCaregiverNames(list);
+  await reconcileLeaveVisits(list);
 
   return {
     list: list.map((doc) => formatVisit(doc)),
@@ -1526,9 +1700,11 @@ const getCarePlanScheduleSources = async (req, carePlanId) => {
     _id: { $in: caregiverIds },
     agencyId,
     role: 'CAREGIVER',
+    status: { $ne: 'Inactive' },
   });
   const byId = {};
   caregivers.forEach((c) => { byId[String(c._id)] = c; });
+  const assignableNeeds = needs.filter((need) => byId[String(need.responsibleStaffId)]);
 
   return {
     care_plan: {
@@ -1546,7 +1722,7 @@ const getCarePlanScheduleSources = async (req, carePlanId) => {
           care_frequency: client.careFrequency || '',
         }
       : null,
-    care_needs: needs.map((need) => ({
+    care_needs: assignableNeeds.map((need) => ({
       area_key: need.areaKey || '',
       area_label: need.areaLabel || '',
       frequency: need.frequency || '',
@@ -1585,6 +1761,7 @@ const getCaregiverVisits = async (req, query = {}) => {
   }
 
   const list = await Model.VisitModel.find(filter).sort({ scheduledStartAt: 1 });
+  await reconcileLeaveVisits(list);
   return list.map(formatVisit);
 };
 
@@ -1628,6 +1805,7 @@ const checkInVisit = async (req, visitId, payload = {}) => {
     caregiverAccountId: caregiverId,
   });
   if (!visit) throw new Error(constants.MESSAGE.VISIT.NOT_FOUND);
+  await reconcileLeaveVisits([visit]);
   if (visit.status === 'Leave') {
     throw new Error(constants.MESSAGE.VISIT.ON_LEAVE);
   }
@@ -2862,6 +3040,9 @@ const displayVisitStatus = (visit) => {
     return visit.lateCheckIn ? 'Pending (Late)' : 'Pending Approval';
   }
   if (visit.status === 'InProgress') return 'In Progress';
+  if (visit.status === 'Leave') {
+    return visit.leaveLabel || (visit.leaveSource === 'holiday' ? 'Holiday' : 'Leave');
+  }
   if (visit.lateCheckIn && visit.checkInAt) return 'Late / In Progress';
   return visit.status;
 };
@@ -2902,6 +3083,9 @@ const getCaregiverDashboard = async (req) => {
       checkOutAt: { $ne: null },
     }).sort({ checkOutAt: -1 }).limit(5),
   ]);
+
+  await reconcileLeaveVisits(todayVisits);
+  await reconcileLeaveVisits(weekVisits);
 
   const todayCompleted = todayVisits.filter((v) => v.status === 'Completed' || (v.status === 'Exception' && v.checkOutAt)).length;
   const todayInProgress = todayVisits.filter((v) => ['InProgress', 'Exception'].includes(v.status) && v.checkInAt && !v.checkOutAt);

@@ -124,20 +124,13 @@ const unmarkVisitsLeave = async ({
 };
 
 const applyHolidayToVisits = async (holiday) => {
-  if (!holidayBlocksWork(holiday)) {
-    return unmarkVisitsLeave({
-      agencyId: holiday.agencyId,
-      dateKeys: [holiday.date],
-      source: 'holiday',
-      holidayId: holiday._id,
-    });
-  }
-  return markVisitsLeave({
+  // Holidays do not put caregivers on leave or block clock-in.
+  // They only affect leave-day counting. Clear any leftover holiday Leave flags.
+  return unmarkVisitsLeave({
     agencyId: holiday.agencyId,
     dateKeys: [holiday.date],
     source: 'holiday',
     holidayId: holiday._id,
-    label: `${holiday.type} Holiday: ${holiday.name}`,
   });
 };
 
@@ -162,16 +155,123 @@ const clearLeaveRequestFromVisits = async (request) => {
   });
 };
 
-const leaveFieldsForDate = (holidayMap, dateKey) => {
-  const holiday = holidayMap.get(dateKey);
-  if (!holiday) return null;
+const RESTORE_SCHEDULED = {
+  status: 'Scheduled',
+  leaveSource: '',
+  holidayId: null,
+  leaveRequestId: null,
+  leaveLabel: '',
+};
+
+const isApprovedLeaveOnDate = (request, dateKey) => {
+  if (!request || request.status !== 'Approved' || !dateKey) return false;
+  if (Array.isArray(request.dates) && request.dates.length) {
+    return request.dates.includes(dateKey);
+  }
+  return dateKey >= request.startDate && dateKey <= request.endDate;
+};
+
+const visitCaregiverId = (visit) => String(visit.caregiverAccountId?._id || visit.caregiverAccountId || '');
+
+const getApprovedLeaveRequestMap = async (agencyId, caregiverAccountId, from, to) => {
+  const map = new Map();
+  if (!agencyId || !caregiverAccountId || !from || !to) return map;
+  const rows = await Model.LeaveRequestModel.find({
+    agencyId,
+    caregiverAccountId,
+    status: 'Approved',
+    startDate: { $lte: to },
+    endDate: { $gte: from },
+  }).lean();
+  rows.forEach((request) => {
+    const keys = Array.isArray(request.dates) && request.dates.length
+      ? request.dates
+      : dateKeysBetween(request.startDate, request.endDate);
+    keys.forEach((key) => {
+      if (key >= from && key <= to && !map.has(key)) map.set(key, request);
+    });
+  });
+  return map;
+};
+
+const visitHasApprovedLeave = (visit, requestById, approvedByCaregiverDate) => {
+  if (visit.checkInAt) return true;
+  const dateKey = visit.scheduledDate;
+  const caregiverId = visitCaregiverId(visit);
+  if (approvedByCaregiverDate.has(`${caregiverId}:${dateKey}`)) return true;
+  if (visit.leaveSource === 'request' || visit.leaveRequestId) {
+    const request = visit.leaveRequestId ? requestById.get(String(visit.leaveRequestId)) : null;
+    if (!request) return false;
+    if (caregiverId && String(request.caregiverAccountId) !== caregiverId) return false;
+    return isApprovedLeaveOnDate(request, dateKey);
+  }
+  return false;
+};
+
+const reconcileLeaveVisits = async (visits) => {
+  if (!Array.isArray(visits) || !visits.length) return visits;
+  const leaveVisits = visits.filter((visit) => visit.status === 'Leave');
+  if (!leaveVisits.length) return visits;
+
+  const agencyId = leaveVisits[0].agencyId?._id || leaveVisits[0].agencyId;
+  const dates = leaveVisits.map((visit) => visit.scheduledDate).filter(Boolean).sort();
+  const requestIds = leaveVisits.map((visit) => visit.leaveRequestId).filter(Boolean);
+  const caregiverIds = [...new Set(leaveVisits.map(visitCaregiverId).filter(Boolean))];
+
+  const [requests, approvedRows] = await Promise.all([
+    requestIds.length ? Model.LeaveRequestModel.find({ _id: { $in: requestIds } }).lean() : [],
+    (agencyId && caregiverIds.length && dates.length)
+      ? Model.LeaveRequestModel.find({
+        agencyId,
+        caregiverAccountId: { $in: caregiverIds },
+        status: 'Approved',
+        startDate: { $lte: dates[dates.length - 1] },
+        endDate: { $gte: dates[0] },
+      }).lean()
+      : [],
+  ]);
+  const requestById = new Map(requests.map((row) => [String(row._id), row]));
+  const approvedByCaregiverDate = new Set();
+  approvedRows.forEach((request) => {
+    const caregiverId = String(request.caregiverAccountId);
+    const keys = Array.isArray(request.dates) && request.dates.length
+      ? request.dates
+      : dateKeysBetween(request.startDate, request.endDate);
+    keys.forEach((key) => approvedByCaregiverDate.add(`${caregiverId}:${key}`));
+  });
+
+  const staleIds = leaveVisits
+    .filter((visit) => !visitHasApprovedLeave(visit, requestById, approvedByCaregiverDate))
+    .map((visit) => visit._id);
+  if (!staleIds.length) return visits;
+
+  await Model.VisitModel.updateMany(
+    { _id: { $in: staleIds }, status: 'Leave', checkInAt: null },
+    { $set: RESTORE_SCHEDULED },
+  );
+
+  const stale = new Set(staleIds.map(String));
+  visits.forEach((visit) => {
+    if (!stale.has(String(visit._id))) return;
+    visit.status = 'Scheduled';
+    visit.leaveSource = '';
+    visit.holidayId = null;
+    visit.leaveRequestId = null;
+    visit.leaveLabel = '';
+  });
+  return visits;
+};
+
+const leaveFieldsForDate = (leaveByDate, dateKey) => {
+  const request = leaveByDate?.get?.(dateKey);
+  if (!request) return null;
   return {
     status: 'Leave',
-    leaveSource: 'holiday',
-    holidayId: holiday._id,
-    leaveRequestId: null,
-    leaveLabel: `${holiday.type} Holiday: ${holiday.name}`,
-    notes: `${holiday.type} Holiday: ${holiday.name}`,
+    leaveSource: 'request',
+    holidayId: null,
+    leaveRequestId: request._id,
+    leaveLabel: request.typeName || 'Leave',
+    notes: request.typeName || 'Leave',
   };
 };
 
@@ -188,4 +288,6 @@ module.exports = {
   applyLeaveRequestToVisits,
   clearLeaveRequestFromVisits,
   leaveFieldsForDate,
+  reconcileLeaveVisits,
+  getApprovedLeaveRequestMap,
 };

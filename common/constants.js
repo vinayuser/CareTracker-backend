@@ -118,6 +118,7 @@ module.exports = {
     },
     CAREGIVER: {
       NOT_FOUND: 'Caregiver not found',
+      INACTIVE: 'Inactive caregivers cannot be assigned to schedules',
       PASSWORD_UPDATED: 'Caregiver password updated successfully',
       UPDATED: 'Caregiver updated successfully',
       STATUS_UPDATED: 'Caregiver status updated',
