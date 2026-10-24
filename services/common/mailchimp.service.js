@@ -120,18 +120,16 @@ const getLists = async () => {
 
 const subscriberHash = (email) => require('crypto').createHash('md5').update(String(email).trim().toLowerCase()).digest('hex');
 
-const ensureList = async ({ fromName, replyTo }) => {
-  if (process.env.MAILCHIMP_LIST_ID) return process.env.MAILCHIMP_LIST_ID;
-  const lists = await getLists();
-  if (lists[0]?.id) return lists[0].id;
+const createList = async ({ name, fromName, replyTo, permissionReminder }) => {
   const created = await request('/lists', {
     method: 'POST',
     body: JSON.stringify({
-      name: 'CareTracker',
-      permission_reminder: 'You are receiving this email because you agreed to CareTracker updates.',
+      name: name || 'CareTracker',
+      permission_reminder: permissionReminder
+        || 'You are receiving this email because you agreed to CareTracker updates.',
       email_type_option: false,
       contact: {
-        company: 'CareTracker',
+        company: name || 'CareTracker',
         address1: 'Online',
         city: 'New York',
         state: 'NY',
@@ -149,8 +147,26 @@ const ensureList = async ({ fromName, replyTo }) => {
   return created.id;
 };
 
-const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiBaseUrl }) => {
-  const listId = await ensureList({ fromName, replyTo });
+const ensureList = async ({ fromName, replyTo, listId, listName } = {}) => {
+  if (listId) return listId;
+  const lists = await getLists();
+  if (listName) {
+    const named = lists.find((list) => list.name === listName);
+    if (named?.id) return named.id;
+    return createList({
+      name: listName,
+      fromName,
+      replyTo,
+      permissionReminder: `You are receiving this email because you agreed to updates from ${listName}.`,
+    });
+  }
+  if (process.env.MAILCHIMP_LIST_ID) return process.env.MAILCHIMP_LIST_ID;
+  if (lists[0]?.id) return lists[0].id;
+  return createList({ name: 'CareTracker', fromName, replyTo });
+};
+
+const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiBaseUrl, listId, listName }) => {
+  const resolvedListId = await ensureList({ fromName, replyTo, listId, listName });
   const when = new Date().toLocaleString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
   });
@@ -163,7 +179,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
     if (!email) continue;
     const [firstName, ...rest] = name.split(' ');
     try {
-      await request(`/lists/${listId}/members/${subscriberHash(email)}`, {
+      await request(`/lists/${resolvedListId}/members/${subscriberHash(email)}`, {
         method: 'PUT',
         body: JSON.stringify({
           email_address: email,
@@ -186,7 +202,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
     throw new Error(reason);
   }
 
-  const segment = await request(`/lists/${listId}/segments`, {
+  const segment = await request(`/lists/${resolvedListId}/segments`, {
     method: 'POST',
     body: JSON.stringify({
       name: `CareTracker ${Date.now()}`,
@@ -199,7 +215,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
     body: JSON.stringify({
       type: 'regular',
       recipients: {
-        list_id: listId,
+        list_id: resolvedListId,
         segment_opts: { saved_segment_id: segment.id },
       },
       settings: {
@@ -225,6 +241,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
     tracked: true,
     provider: 'mailchimp',
     campaignId: campaign.id,
+    listId: resolvedListId,
     activity,
   };
 };

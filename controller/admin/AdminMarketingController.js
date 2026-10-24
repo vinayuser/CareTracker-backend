@@ -2,7 +2,26 @@ const constants = require('../../common/constants');
 const functions = require('../../common/functions');
 const MailchimpService = require('../../services/common/mailchimp.service');
 const AdminMarketingAudienceService = require('../../services/admin/adminMarketingAudience.service');
+const AdminMarketingService = require('../../services/admin/adminMarketing.service');
 const EmailPreferenceService = require('../../services/common/emailPreference.service');
+
+module.exports.getState = async (req, res, next) => {
+  try {
+    const data = await AdminMarketingService.getState();
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.saveState = async (req, res, next) => {
+  try {
+    const data = await AdminMarketingService.saveState(req.body || {});
+    return res.success(constants.MESSAGE.RECORD_UPDATED, data);
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports.getPlatformAudience = async (req, res, next) => {
   try {

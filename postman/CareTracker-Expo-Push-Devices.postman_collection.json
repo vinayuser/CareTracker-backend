@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "CareTracker - Expo Push Devices",
+    "_postman_id": "c7e2d4a1-8b19-4f6e-9c31-2a0d5e8f14b6",
+    "description": "Device token APIs for the mobile app (Expo push).\n\n**When to call**\n- After login → `POST /devices/register`\n- On logout → `DELETE /devices/register`\n\n**Setup**\n1. Set `baseUrl`:\n   - Local: `http://localhost:3000/api`\n   - Prod: `https://caretraker.com/api/api`\n2. Run **Login** with caregiver/client email or userId + password. `token` is saved automatically.\n3. Put the real Expo token in `pushToken` and a stable UUID in `deviceId`.\n\nAll authenticated requests send `Authorization: Bearer {{token}}`.\n\n---\n\n**Register body**\n```json\n{\n  \"pushToken\": \"ExponentPushToken[xxx]\",\n  \"platform\": \"android\",\n  \"deviceId\": \"uuid\"\n}\n```\n- `platform`: `android` | `ios`\n- `deviceId`: unique per device (min 8 chars). One user can have many devices. Same `deviceId` upserts.\n\n**Deregister body**\n```json\n{\n  \"pushToken\": \"ExponentPushToken[xxx]\"\n}\n```\n\n---\n\n**Push payload the backend sends** (flat string `data`):\n```json\n{\n  \"to\": \"ExponentPushToken[xxx]\",\n  \"title\": \"EVV enrollment assigned\",\n  \"body\": \"Complete enrollment EVV-10001 for Mary Johnson.\",\n  \"sound\": \"default\",\n  \"data\": {\n    \"type\": \"evv.enrollment.assigned\",\n    \"entityId\": \"6acf8a22d5ef7bbf4339ef02\",\n    \"notificationId\": \"6acf8a28d5ef7bbf4339ef07\",\n    \"entityType\": \"EvvEnrollment\",\n    \"category\": \"compliance\",\n    \"tone\": \"info\",\n    \"priority\": \"normal\",\n    \"actionUrl\": \"/caregiver/evv/enrollments/6acf8a22d5ef7bbf4339ef02\",\n    \"actionLabel\": \"View\",\n    \"recipientType\": \"agency_account\",\n    \"agencyId\": \"...\"\n  }\n}\n```\nAll `data` values are strings. Extra metadata keys (e.g. `enrollmentCode`, `clientName`) may also be included as strings.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://caretraker.com/api/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "pushToken",
+      "value": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]"
+    },
+    {
+      "key": "deviceId",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "platform",
+      "value": "android"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Public. Accepts email or login userId. Saves `token` on success. Use a caregiver or client account for the mobile app.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"caregiver@example.com\",\n  \"password\": \"password\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json?.data?.token;",
+                  "  if (token) {",
+                  "    pm.collectionVariables.set('token', token);",
+                  "    console.log('Saved auth token');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "Register Push Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["devices", "register"]
+            },
+            "description": "Call after login. Upserts by `deviceId` for the logged-in user.\n\nBody:\n- `pushToken` (required): `ExponentPushToken[...]` or `ExpoPushToken[...]`\n- `platform` (required): `android` | `ios`\n- `deviceId` (required): stable UUID for this device",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pushToken\": \"{{pushToken}}\",\n  \"platform\": \"{{platform}}\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "Registered",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\",\n  \"platform\": \"android\",\n  \"deviceId\": \"00000000-0000-0000-0000-000000000001\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/devices/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["devices", "register"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"statusCode\": 200,\n  \"message\": \"Device registered for push notifications\",\n  \"data\": {\n    \"id\": \"6acf8a28d5ef7bbf4339ef07\",\n    \"userId\": \"6acf8a22d5ef7bbf4339ef02\",\n    \"agencyId\": \"6acf8a11d5ef7bbf4339ef01\",\n    \"deviceId\": \"00000000-0000-0000-0000-000000000001\",\n    \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\",\n    \"platform\": \"android\",\n    \"updatedAt\": \"2026-10-24T14:11:29.000Z\"\n  },\n  \"status\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "Deregister Push Token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["devices", "register"]
+            },
+            "description": "Call on logout. Deletes the matching `pushToken` for the logged-in user.\n\nSend JSON body:\n```json\n{ \"pushToken\": \"ExponentPushToken[xxx]\" }\n```",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pushToken\": \"{{pushToken}}\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "Deregistered",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/devices/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["devices", "register"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"statusCode\": 200,\n  \"message\": \"Device deregistered from push notifications\",\n  \"data\": {\n    \"deleted\": 1\n  },\n  \"status\": 1\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

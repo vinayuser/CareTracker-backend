@@ -36,4 +36,6 @@ module.exports = {
   DeviceTokenModel: require('./DeviceTokenModel'),
   CaregiverActivityModel: require('./CaregiverActivityModel'),
   EmailPreferenceModel: require('./EmailPreferenceModel'),
+  AgencyEmailMarketingModel: require('./AgencyEmailMarketingModel'),
+  PlatformEmailMarketingModel: require('./PlatformEmailMarketingModel'),
 };

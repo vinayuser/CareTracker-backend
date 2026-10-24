@@ -35,6 +35,7 @@ module.exports = {
   VisitScheduleController: require('./agency/VisitScheduleController'),
   EvvSettingsController: require('./agency/EvvSettingsController'),
   AgencySettingsController: require('./agency/AgencySettingsController'),
+  AgencyMarketingController: require('./agency/AgencyMarketingController'),
   ClientInvoiceController: require('./agency/ClientInvoiceController'),
   AgencyReportsController: require('./agency/AgencyReportsController'),
   HolidayController: require('./agency/HolidayController'),

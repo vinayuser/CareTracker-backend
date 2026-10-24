@@ -151,6 +151,8 @@ router.get('/admin/billing-claims/stats', Auth.authenticate('super_admin'), Cont
 router.get('/admin/billing-claims', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoices);
 router.get('/admin/billing-claims/:id', Auth.authenticate('super_admin'), Controller.AdminBillingClaimsController.getInvoiceById);
 
+router.get('/admin/marketing/state', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getState);
+router.put('/admin/marketing/state', Auth.authenticate('super_admin'), Controller.AdminMarketingController.saveState);
 router.get('/admin/marketing/mailchimp', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpStatus);
 router.get('/admin/marketing/mailchimp/lists', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getMailchimpLists);
 router.get('/admin/marketing/platform-audience', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getPlatformAudience);
@@ -346,6 +348,12 @@ router.get('/agency/evv/dashboard', Auth.authenticate('agency_owner', 'hr'), Con
 router.get('/agency/dashboard', Auth.authenticate('agency_owner', 'hr'), Controller.VisitScheduleController.getAgencyDashboard);
 router.get('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.get);
 router.put('/agency/evv/settings', Auth.authenticate('agency_owner', 'hr'), Controller.EvvSettingsController.update);
+router.get('/agency/marketing/state', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyMarketingController.getState);
+router.put('/agency/marketing/state', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyMarketingController.saveState);
+router.get('/agency/marketing/audience', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyMarketingController.getAudience);
+router.get('/agency/marketing/mailchimp', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyMarketingController.getMailchimpStatus);
+router.post('/agency/marketing/campaigns/send', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyMarketingController.sendCampaign);
+
 router.get('/agency/settings', Auth.authenticate('agency_owner'), Controller.AgencySettingsController.get);
 router.put('/agency/settings', Auth.authenticate('agency_owner'), Controller.AgencySettingsController.update);
 

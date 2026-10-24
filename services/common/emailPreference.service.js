@@ -7,9 +7,27 @@ const TOPICS = [
   { id: 'updates', label: 'Agency news' },
 ];
 
+const PLATFORM_SCOPE = 'platform';
+let droppedLegacyIndex = false;
+
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const normalizeScope = (value) => {
+  const scope = String(value || '').trim();
+  return scope || PLATFORM_SCOPE;
+};
+
+const ensureIndexes = async () => {
+  if (droppedLegacyIndex) return;
+  droppedLegacyIndex = true;
+  try {
+    await Model.EmailPreferenceModel.collection.dropIndex('email_1');
+  } catch {
+    /* already dropped or never existed */
+  }
+};
 
 const format = (email, doc) => ({
   email,
@@ -18,18 +36,33 @@ const format = (email, doc) => ({
     ? doc.topics
     : TOPICS.map((item) => item.id),
   topicsAvailable: TOPICS,
+  scope: doc?.scope || PLATFORM_SCOPE,
 });
 
-const getPreferences = async (rawEmail) => {
+const findPreference = async (email, scope) => {
+  await ensureIndexes();
+  if (scope === PLATFORM_SCOPE) {
+    return Model.EmailPreferenceModel.findOne({
+      email,
+      $or: [{ scope: PLATFORM_SCOPE }, { scope: { $exists: false } }, { scope: null }],
+    }).lean();
+  }
+  return Model.EmailPreferenceModel.findOne({ email, scope }).lean();
+};
+
+const getPreferences = async (rawEmail, rawScope) => {
   const email = normalizeEmail(rawEmail);
   if (!isEmail(email)) throw new Error('A valid email is required');
-  const doc = await Model.EmailPreferenceModel.findOne({ email }).lean();
+  const scope = normalizeScope(rawScope);
+  const doc = await findPreference(email, scope);
   return format(email, doc);
 };
 
-const savePreferences = async (rawEmail, payload = {}) => {
+const savePreferences = async (rawEmail, payload = {}, rawScope) => {
   const email = normalizeEmail(rawEmail);
   if (!isEmail(email)) throw new Error('A valid email is required');
+  const scope = normalizeScope(rawScope || payload.agencyId || payload.scope);
+  await ensureIndexes();
   const unsubscribed = Boolean(payload.unsubscribed);
   const allowed = new Set(TOPICS.map((item) => item.id));
   const topics = unsubscribed
@@ -38,22 +71,30 @@ const savePreferences = async (rawEmail, payload = {}) => {
       .map((item) => String(item))
       .filter((item) => allowed.has(item));
   const doc = await Model.EmailPreferenceModel.findOneAndUpdate(
-    { email },
-    { $set: { email, unsubscribed, topics } },
+    { email, scope },
+    { $set: { email, scope, unsubscribed, topics } },
     { upsert: true, new: true },
   );
   return format(email, doc);
 };
 
-const unsubscribe = async (rawEmail) => savePreferences(rawEmail, { unsubscribed: true, topics: [] });
+const unsubscribe = async (rawEmail, rawScope) => savePreferences(rawEmail, { unsubscribed: true, topics: [] }, rawScope);
 
-const blockedEmails = async (emails = []) => {
+const blockedEmails = async (emails = [], rawScope) => {
   const list = [...new Set(emails.map(normalizeEmail).filter(isEmail))];
   if (!list.length) return new Set();
-  const rows = await Model.EmailPreferenceModel.find({
+  const scope = normalizeScope(rawScope);
+  await ensureIndexes();
+  const filter = {
     email: { $in: list },
     unsubscribed: true,
-  }).select('email').lean();
+  };
+  if (scope === PLATFORM_SCOPE) {
+    filter.$or = [{ scope: PLATFORM_SCOPE }, { scope: { $exists: false } }, { scope: null }];
+  } else {
+    filter.scope = scope;
+  }
+  const rows = await Model.EmailPreferenceModel.find(filter).select('email').lean();
   return new Set(rows.map((row) => row.email));
 };
 
