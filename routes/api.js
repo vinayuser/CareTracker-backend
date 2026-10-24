@@ -53,6 +53,18 @@ router.patch(
   Controller.NotificationController.markRead,
 );
 
+// Mobile device push tokens (Expo)
+router.post(
+  '/devices/register',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.DeviceController.register,
+);
+router.delete(
+  '/devices/register',
+  Auth.authenticate('super_admin', 'agency_owner', 'hr', 'caregiver', 'client'),
+  Controller.DeviceController.deregister,
+);
+
 // Public registration
 router.get('/registration/check-user-id', Controller.RegistrationController.checkUserId);
 router.post('/registration/account', Controller.RegistrationController.createAccount);

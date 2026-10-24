@@ -42,5 +42,6 @@ module.exports = {
   CaregiverController: require('./caregiver/CaregiverController'),
   CaregiverEvvEnrollmentController: require('./caregiver/EvvEnrollmentController'),
   NotificationController: require('./NotificationController'),
+  DeviceController: require('./DeviceController'),
   EmailPreferenceController: require('./common/EmailPreferenceController'),
 };

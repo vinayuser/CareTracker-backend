@@ -18,6 +18,10 @@ module.exports = {
       RESET_PASSWORD_SUCCESS: 'Password reset successfully. You can sign in now.',
       RESET_TOKEN_INVALID: 'This reset link is invalid or has expired.',
     },
+    DEVICE: {
+      REGISTERED: 'Device registered for push notifications',
+      DEREGISTERED: 'Device deregistered from push notifications',
+    },
     USER: {
       NOT_FOUND: 'User Not Found',
       EMAIL_ALREADY_IN_USE: 'This email is already registered with another account',

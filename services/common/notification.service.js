@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Model = require('../../models/index');
 const functions = require('../../common/functions');
+const PushService = require('./push.service');
 
 const TYPES = {
   AGENCY_ONBOARDED: 'agency.onboarded',
@@ -73,7 +74,9 @@ const createOne = async (payload) => {
     entityId: toOid(payload.entityId),
     metadata: payload.metadata || {},
   });
-  return formatOne(doc);
+  const created = formatOne(doc);
+  emit(() => PushService.sendForNotification(created));
+  return created;
 };
 
 /** Fire-and-forget helper — never blocks the caller. */

@@ -21,4 +21,5 @@ module.exports = {
   ClientInvoice: require('./agency/clientInvoice'),
   Holiday: require('./agency/holiday'),
   Leave: require('./agency/leave'),
+  Device: require('./common/device'),
 };

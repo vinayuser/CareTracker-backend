@@ -33,6 +33,7 @@ module.exports = {
   CaregiverLeaveBalanceModel: require('./CaregiverLeaveBalanceModel'),
   LeaveRequestModel: require('./LeaveRequestModel'),
   NotificationModel: require('./NotificationModel'),
+  DeviceTokenModel: require('./DeviceTokenModel'),
   CaregiverActivityModel: require('./CaregiverActivityModel'),
   EmailPreferenceModel: require('./EmailPreferenceModel'),
 };

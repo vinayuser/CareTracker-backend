@@ -240,6 +240,67 @@
       ]
     },
     {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "Register Push Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "register"
+              ]
+            },
+            "description": "Call after login. Upserts the Expo push token for this device.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\",\n  \"platform\": \"android\",\n  \"deviceId\": \"00000000-0000-0000-0000-000000000001\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deregister Push Token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/devices/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "devices",
+                "register"
+              ]
+            },
+            "description": "Call on logout. Removes the matching Expo push token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pushToken\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Profile",
       "item": [
         {

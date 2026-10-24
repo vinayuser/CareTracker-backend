@@ -21,19 +21,36 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_BRANCH: ${{ inputs.branch }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
           script_stop: true
-          command_timeout: 10m
-          envs: DEPLOY_BRANCH
+          command_timeout: 12m
+          envs: DEPLOY_BRANCH,EXPO_ACCESS_TOKEN
           script: |
-            set -e
+            set -euo pipefail
             BRANCH="${DEPLOY_BRANCH:-main}"
             echo "Deploying backend branch: ${BRANCH}"
             cd /var/www/CareTracker-backend/
             git fetch origin "${BRANCH}"
             git checkout -B "${BRANCH}" "origin/${BRANCH}"
+
+            ENV_FILE="config/.env"
+            if [ -n "${EXPO_ACCESS_TOKEN:-}" ]; then
+              mkdir -p config
+              touch "${ENV_FILE}"
+              if grep -q '^EXPO_ACCESS_TOKEN=' "${ENV_FILE}"; then
+                sed -i "s|^EXPO_ACCESS_TOKEN=.*|EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN}|" "${ENV_FILE}"
+              else
+                printf '\nEXPO_ACCESS_TOKEN=%s\n' "${EXPO_ACCESS_TOKEN}" >> "${ENV_FILE}"
+              fi
+              echo "EXPO_ACCESS_TOKEN synced into config/.env"
+            else
+              echo "EXPO_ACCESS_TOKEN secret is empty — skipped env sync"
+            fi
+
+            npm install --omit=dev
             pm2 restart all
