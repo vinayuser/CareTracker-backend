@@ -31,26 +31,12 @@ jobs:
           command_timeout: 12m
           envs: DEPLOY_BRANCH,EXPO_ACCESS_TOKEN
           script: |
-            set -euo pipefail
+            set -e
             BRANCH="${DEPLOY_BRANCH:-main}"
             echo "Deploying backend branch: ${BRANCH}"
             cd /var/www/CareTracker-backend/
             git fetch origin "${BRANCH}"
             git checkout -B "${BRANCH}" "origin/${BRANCH}"
-
-            ENV_FILE="config/.env"
-            if [ -n "${EXPO_ACCESS_TOKEN:-}" ]; then
-              mkdir -p config
-              touch "${ENV_FILE}"
-              if grep -q '^EXPO_ACCESS_TOKEN=' "${ENV_FILE}"; then
-                sed -i "s|^EXPO_ACCESS_TOKEN=.*|EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN}|" "${ENV_FILE}"
-              else
-                printf '\nEXPO_ACCESS_TOKEN=%s\n' "${EXPO_ACCESS_TOKEN}" >> "${ENV_FILE}"
-              fi
-              echo "EXPO_ACCESS_TOKEN synced into config/.env"
-            else
-              echo "EXPO_ACCESS_TOKEN secret is empty — skipped env sync"
-            fi
-
+            node -e 'const fs=require("fs");const p="config/.env";const t=String(process.env.EXPO_ACCESS_TOKEN||"").trim();if(!t){console.log("EXPO_ACCESS_TOKEN secret is empty");process.exit(0);}fs.mkdirSync("config",{recursive:true});const text=fs.existsSync(p)?fs.readFileSync(p,"utf8"):"";const lines=text.split(/\r?\n/);let found=false;const out=lines.map((l)=>{if(l.startsWith("EXPO_ACCESS_TOKEN=")){found=true;return "EXPO_ACCESS_TOKEN="+t;}return l;});if(!found){if(out.length&&out[out.length-1]!=="")out.push("");out.push("EXPO_ACCESS_TOKEN="+t);}fs.writeFileSync(p,out.join("\n").replace(/\n+$/,"\n"));console.log("EXPO_ACCESS_TOKEN synced into config/.env");'
             npm install --omit=dev
             pm2 restart all
