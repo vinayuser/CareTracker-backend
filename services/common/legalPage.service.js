@@ -72,13 +72,55 @@ Replace this default text from the admin Legal Pages screen.`,
 
 const ALLOWED = new Set(Object.keys(DEFAULTS));
 
+const SLUG_ALIASES = {
+  privacy: 'privacy',
+  'privacy-policy': 'privacy',
+  terms: 'terms',
+  'terms-and-conditions': 'terms',
+  'terms-of-service': 'terms',
+};
+
+const PUBLIC_PATHS = {
+  privacy: '/privacy-policy',
+  terms: '/terms-and-conditions',
+};
+
+const resolveSlug = (rawSlug) => {
+  const key = String(rawSlug || '').trim().toLowerCase();
+  return SLUG_ALIASES[key] || null;
+};
+
+const htmlToPlainText = (value = '') => {
+  const raw = String(value || '').replace(/\r\n/g, '\n');
+  if (!raw.trim()) return '';
+  if (!/<[a-z][\s\S]*>/i.test(raw)) return raw.trim();
+  return raw
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 const format = (doc) => {
   if (!doc) return null;
+  const content = doc.content || '';
   return {
     id: String(doc._id),
     slug: doc.slug,
+    path: PUBLIC_PATHS[doc.slug] || `/${doc.slug}`,
     title: doc.title,
-    content: doc.content || '',
+    content,
+    contentText: htmlToPlainText(content),
     updatedAt: doc.updatedAt?.toISOString?.() || doc.updatedAt || null,
   };
 };
@@ -106,8 +148,8 @@ const listPages = async () => {
 };
 
 const getBySlug = async (rawSlug) => {
-  const slug = String(rawSlug || '').trim().toLowerCase();
-  if (!ALLOWED.has(slug)) {
+  const slug = resolveSlug(rawSlug);
+  if (!slug || !ALLOWED.has(slug)) {
     const error = new Error('Legal page not found');
     error.statusCode = 404;
     throw error;
@@ -121,8 +163,8 @@ const getBySlug = async (rawSlug) => {
 };
 
 const savePage = async (rawSlug, payload = {}, adminId = null) => {
-  const slug = String(rawSlug || '').trim().toLowerCase();
-  if (!ALLOWED.has(slug)) {
+  const slug = resolveSlug(rawSlug);
+  if (!slug || !ALLOWED.has(slug)) {
     const error = new Error('Legal page not found');
     error.statusCode = 404;
     throw error;
@@ -148,5 +190,6 @@ module.exports = {
   listPages,
   getBySlug,
   savePage,
+  resolveSlug,
   DEFAULTS,
 };

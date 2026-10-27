@@ -7,6 +7,11 @@ router.get('/email/preferences', Controller.EmailPreferenceController.getPrefere
 router.post('/email/preferences', Controller.EmailPreferenceController.savePreferences);
 router.post('/email/unsubscribe', Controller.EmailPreferenceController.unsubscribe);
 
+router.get('/legal', Controller.LegalPageController.getPublicList);
+router.get('/privacy-policy', Controller.LegalPageController.getPublicPrivacy);
+router.get('/terms-and-conditions', Controller.LegalPageController.getPublicTerms);
+router.get('/legal/privacy-policy', Controller.LegalPageController.getPublicPrivacy);
+router.get('/legal/terms-and-conditions', Controller.LegalPageController.getPublicTerms);
 router.get('/legal/:slug', Controller.LegalPageController.getPublic);
 router.get('/admin/legal', Auth.authenticate('super_admin'), Controller.LegalPageController.list);
 router.get('/admin/legal/:slug', Auth.authenticate('super_admin'), Controller.LegalPageController.getAdmin);

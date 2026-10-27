@@ -1,9 +1,36 @@
 const constants = require('../../common/constants');
 const LegalPageService = require('../../services/common/legalPage.service');
 
+module.exports.getPublicList = async (req, res, next) => {
+  try {
+    const data = await LegalPageService.listPages();
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports.getPublic = async (req, res, next) => {
   try {
     const data = await LegalPageService.getBySlug(req.params.slug);
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getPublicPrivacy = async (req, res, next) => {
+  try {
+    const data = await LegalPageService.getBySlug('privacy');
+    return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getPublicTerms = async (req, res, next) => {
+  try {
+    const data = await LegalPageService.getBySlug('terms');
     return res.success(constants.MESSAGE.SUCCESS, data);
   } catch (error) {
     next(error);
