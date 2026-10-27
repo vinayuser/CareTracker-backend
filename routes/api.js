@@ -7,6 +7,11 @@ router.get('/email/preferences', Controller.EmailPreferenceController.getPrefere
 router.post('/email/preferences', Controller.EmailPreferenceController.savePreferences);
 router.post('/email/unsubscribe', Controller.EmailPreferenceController.unsubscribe);
 
+router.get('/legal/:slug', Controller.LegalPageController.getPublic);
+router.get('/admin/legal', Auth.authenticate('super_admin'), Controller.LegalPageController.list);
+router.get('/admin/legal/:slug', Auth.authenticate('super_admin'), Controller.LegalPageController.getAdmin);
+router.put('/admin/legal/:slug', Auth.authenticate('super_admin'), Controller.LegalPageController.save);
+
 router.post('/auth/login', Controller.AdminAuthController.login);
 router.post('/auth/forgot-password', Controller.AdminAuthController.forgotPassword);
 router.post('/auth/reset-password', Controller.AdminAuthController.resetPassword);

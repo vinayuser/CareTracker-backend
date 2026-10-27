@@ -38,4 +38,5 @@ module.exports = {
   EmailPreferenceModel: require('./EmailPreferenceModel'),
   AgencyEmailMarketingModel: require('./AgencyEmailMarketingModel'),
   PlatformEmailMarketingModel: require('./PlatformEmailMarketingModel'),
+  LegalPageModel: require('./LegalPageModel'),
 };

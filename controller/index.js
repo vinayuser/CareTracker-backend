@@ -45,4 +45,5 @@ module.exports = {
   NotificationController: require('./NotificationController'),
   DeviceController: require('./DeviceController'),
   EmailPreferenceController: require('./common/EmailPreferenceController'),
+  LegalPageController: require('./common/LegalPageController'),
 };
