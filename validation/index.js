@@ -22,4 +22,5 @@ module.exports = {
   Holiday: require('./agency/holiday'),
   Leave: require('./agency/leave'),
   Device: require('./common/device'),
+  DemoEnquiry: require('./common/demoEnquiry'),
 };

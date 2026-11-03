@@ -17,6 +17,10 @@ router.get('/admin/legal', Auth.authenticate('super_admin'), Controller.LegalPag
 router.get('/admin/legal/:slug', Auth.authenticate('super_admin'), Controller.LegalPageController.getAdmin);
 router.put('/admin/legal/:slug', Auth.authenticate('super_admin'), Controller.LegalPageController.save);
 
+router.post('/demo-requests', Controller.DemoEnquiryController.create);
+router.get('/admin/enquiries', Auth.authenticate('super_admin'), Controller.DemoEnquiryController.list);
+router.get('/admin/enquiries/:id', Auth.authenticate('super_admin'), Controller.DemoEnquiryController.getOne);
+
 router.post('/auth/login', Controller.AdminAuthController.login);
 router.post('/auth/forgot-password', Controller.AdminAuthController.forgotPassword);
 router.post('/auth/reset-password', Controller.AdminAuthController.resetPassword);

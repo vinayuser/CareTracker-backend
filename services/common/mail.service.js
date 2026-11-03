@@ -1586,6 +1586,53 @@ const sendReportReminderEmail = async ({
   return sendMail({ to, subject, html, text });
 };
 
+const inboxEmail = () =>
+  process.env.MAILCHIMP_FROM_EMAIL
+  || process.env.MAIL_FROM_ADDRESS
+  || process.env.MAIL_FROM
+  || process.env.SMTP_USER
+  || '';
+
+const sendDemoEnquiryEmail = async (enquiry = {}) => {
+  const to = inboxEmail();
+  const name = `${enquiry.firstName || ''} ${enquiry.lastName || ''}`.trim() || 'A visitor';
+  const subject = `New demo request — ${name}`;
+  const phone = [enquiry.dialCode, enquiry.phone].filter(Boolean).join(' ');
+  const when = [enquiry.scheduleDate, enquiry.scheduleTime].filter(Boolean).join(' at ');
+  const zone = enquiry.timezone ? ` (${enquiry.timezone})` : '';
+
+  const text = [
+    'A new demo request was submitted on the CareTraker website.',
+    '',
+    `Name: ${name}`,
+    `Email: ${enquiry.email || ''}`,
+    `Phone: ${phone}`,
+    `Preferred time: ${when}${zone}`,
+    `Address: ${enquiry.address || ''}`,
+    '',
+    'Open Super Admin → Enquiries to follow up.',
+  ].join('\n');
+
+  const html = wrapEmail('New demo request', `
+    <p style="margin:0 0 16px;">A new demo request was submitted on the CareTraker website.</p>
+    <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#334155;">
+      <tr><td style="padding:6px 0;width:140px;color:#64748b;">Name</td><td style="padding:6px 0;font-weight:600;color:#0f172a;">${escapeHtml(name)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Email</td><td style="padding:6px 0;">${escapeHtml(enquiry.email || '')}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Phone</td><td style="padding:6px 0;">${escapeHtml(phone)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Preferred time</td><td style="padding:6px 0;">${escapeHtml(when)}${escapeHtml(zone)}</td></tr>
+      <tr><td style="padding:6px 0;vertical-align:top;color:#64748b;">Address</td><td style="padding:6px 0;">${escapeHtml(enquiry.address || '')}</td></tr>
+    </table>
+    <p style="margin:20px 0 0;color:#64748b;font-size:13px;">Open Super Admin → Enquiries to follow up.</p>
+  `);
+
+  if (!to) {
+    console.warn('[mail] No platform from-email configured; demo enquiry email skipped');
+    return { sent: false, skipped: true };
+  }
+
+  return sendMail({ to, subject, html, text });
+};
+
 module.exports = {
   sendMail,
   sendCandidateApplicationEmail,
@@ -1614,6 +1661,7 @@ module.exports = {
   sendQuoteAcceptedEmail,
   sendCarePlanUpdatedEmail,
   sendScheduleAssignedEmail,
+  sendDemoEnquiryEmail,
   sendPasswordResetEmail,
   sendReportReminderEmail,
   isConfigured,

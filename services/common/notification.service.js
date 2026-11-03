@@ -35,6 +35,7 @@ const TYPES = {
   INVOICE_SENT: 'billing.invoice.sent',
   INVOICE_RECEIVED: 'billing.invoice.received',
   MESSAGE_RECEIVED: 'message.received',
+  DEMO_ENQUIRY_RECEIVED: 'demo.enquiry.received',
 };
 
 const toOid = (value) => {

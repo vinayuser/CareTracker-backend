@@ -46,4 +46,5 @@ module.exports = {
   DeviceController: require('./DeviceController'),
   EmailPreferenceController: require('./common/EmailPreferenceController'),
   LegalPageController: require('./common/LegalPageController'),
+  DemoEnquiryController: require('./common/DemoEnquiryController'),
 };

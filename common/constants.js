@@ -275,6 +275,10 @@ module.exports = {
       PASSWORD_UPDATED: 'Agency password updated successfully',
       PASSWORD_RESET_SENT: 'A new password was generated and emailed to the agency owner',
     },
+    DEMO_ENQUIRY: {
+      SUBMITTED: 'Demo request submitted successfully',
+      NOT_FOUND: 'Demo enquiry not found',
+    },
     INVOICE: {
       CREATED: 'Invoice draft created',
       SENT: 'Invoice sent',

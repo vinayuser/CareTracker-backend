@@ -29,7 +29,7 @@ const MODULE_GROUPS = [
   },
   {
     title: 'Growth',
-    keys: ['ADMIN_MARKETING'],
+    keys: ['ADMIN_ENQUIRIES', 'ADMIN_MARKETING'],
   },
   {
     title: 'Platform',
@@ -57,6 +57,7 @@ const MODULE_LABELS = {
   ADMIN_SUBSCRIPTION_PLANS: 'Subscriptions & Plans',
   ADMIN_PAYMENTS: 'Payments',
   ADMIN_SOCIAL: 'Social & Community',
+  ADMIN_ENQUIRIES: 'Enquiries',
   ADMIN_MARKETING: 'Marketing',
   ADMIN_REFERRALS: 'Referrals',
   ADMIN_CRM: 'CRM',
