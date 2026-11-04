@@ -57,7 +57,7 @@ function formData({ client, caregiver, agency, plan, area }) {
     serviceInfo: {
       agencyName: agency.name,
       agencyPhone: agency.phone || '',
-      evvVendor: 'CareTracker EVV',
+      evvVendor: 'Caretraqer EVV',
       medicaidProgram: client.insuranceProvider || 'Medicaid',
       assignedServices: area.label,
       planCode: plan.planCode,
@@ -77,7 +77,7 @@ function formData({ client, caregiver, agency, plan, area }) {
     },
     trainingAck: { caregiverSignature: SIGN, date: today },
     officeUse: {
-      evvSystem: 'CareTracker',
+      evvSystem: 'Caretraqer',
       enrollmentDate: today,
       staffInitials: 'JS',
       methodSetUpBy: 'John Smith',

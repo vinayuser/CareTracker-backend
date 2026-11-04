@@ -54,7 +54,7 @@ module.exports.sendCampaign = async (req, res, next) => {
   try {
     const subject = String(req.body.subject || '').trim();
     const html = String(req.body.html || '').trim();
-    const fromName = String(req.body.fromName || 'CareTracker').trim();
+    const fromName = String(req.body.fromName || 'Caretraqer').trim();
     const replyTo = String(req.body.fromEmail || req.body.replyTo || '').trim();
     const incoming = Array.isArray(req.body.recipients) ? req.body.recipients : [];
     const blocked = await EmailPreferenceService.blockedEmails(incoming.map((person) => person?.email));

@@ -25,7 +25,7 @@ const REMINDER_TYPES = {
   },
 };
 
-const COMPANY_NAME = process.env.COMPANY_NAME || 'CareTraker';
+const COMPANY_NAME = process.env.COMPANY_NAME || 'Caretraqer';
 
 const displayName = (value, fallback = '—') => {
   const text = String(value || '').trim();

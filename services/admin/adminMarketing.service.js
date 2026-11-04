@@ -8,14 +8,14 @@ const emptyState = () => {
   const today = new Date().toISOString().slice(0, 10);
   return {
     settings: {
-      fromName: 'CareTracker',
+      fromName: 'Caretraqer',
       fromEmail: process.env.MAILCHIMP_FROM_EMAIL || process.env.MAIL_FROM_ADDRESS || 'hello@caretraker.com',
       replyTo: process.env.MAILCHIMP_FROM_EMAIL || process.env.MAIL_FROM_ADDRESS || 'support@caretraker.com',
       domain: 'caretraker.com',
       domainStatus: 'Pending',
       unsubscribeUrl: '/email/unsubscribe',
       preferencesUrl: '/email/preferences',
-      footer: 'CareTracker helps agencies coordinate care. This message is a product or marketing update, not a clinical record.',
+      footer: 'Caretraqer helps agencies coordinate care. This message is a product or marketing update, not a clinical record.',
       suppression: [],
     },
     lists: [{ id: uid('list'), name: 'Platform contacts', updatedAt: today }],

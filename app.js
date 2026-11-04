@@ -98,7 +98,7 @@ async function start() {
     // }
 
     server.listen(port, () => {
-      console.log(`CareTraker API running on port ${port} (pid ${process.pid})`);
+      console.log(`Caretraqer API running on port ${port} (pid ${process.pid})`);
     });
   } catch (error) {
     console.error('Failed to start API:', error);

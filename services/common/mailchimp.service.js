@@ -124,12 +124,12 @@ const createList = async ({ name, fromName, replyTo, permissionReminder }) => {
   const created = await request('/lists', {
     method: 'POST',
     body: JSON.stringify({
-      name: name || 'CareTracker',
+      name: name || 'Caretraqer',
       permission_reminder: permissionReminder
-        || 'You are receiving this email because you agreed to CareTracker updates.',
+        || 'You are receiving this email because you agreed to Caretraqer updates.',
       email_type_option: false,
       contact: {
-        company: name || 'CareTracker',
+        company: name || 'Caretraqer',
         address1: 'Online',
         city: 'New York',
         state: 'NY',
@@ -137,7 +137,7 @@ const createList = async ({ name, fromName, replyTo, permissionReminder }) => {
         country: 'US',
       },
       campaign_defaults: {
-        from_name: fromName || 'CareTracker',
+        from_name: fromName || 'Caretraqer',
         from_email: replyTo,
         subject: '',
         language: 'en',
@@ -162,7 +162,7 @@ const ensureList = async ({ fromName, replyTo, listId, listName } = {}) => {
   }
   if (process.env.MAILCHIMP_LIST_ID) return process.env.MAILCHIMP_LIST_ID;
   if (lists[0]?.id) return lists[0].id;
-  return createList({ name: 'CareTracker', fromName, replyTo });
+  return createList({ name: 'Caretraqer', fromName, replyTo });
 };
 
 const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiBaseUrl, listId, listName }) => {
@@ -205,7 +205,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
   const segment = await request(`/lists/${resolvedListId}/segments`, {
     method: 'POST',
     body: JSON.stringify({
-      name: `CareTracker ${Date.now()}`,
+      name: `Caretraqer ${Date.now()}`,
       static_segment: ready,
     }),
   });
@@ -221,7 +221,7 @@ const sendCampaign = async ({ subject, html, fromName, replyTo, recipients, apiB
       settings: {
         subject_line: subject,
         title: subject.slice(0, 90),
-        from_name: fromName || 'CareTracker',
+        from_name: fromName || 'Caretraqer',
         reply_to: replyTo,
       },
     }),
@@ -265,7 +265,7 @@ const sendTransactional = async ({
   const resolvedFromName = fromName
     || process.env.MAILCHIMP_FROM_NAME
     || process.env.MAIL_FROM_NAME
-    || 'CareTracker';
+    || 'Caretraqer';
   const resolvedReplyTo = replyTo
     || process.env.MAILCHIMP_FROM_EMAIL
     || process.env.MAIL_FROM_ADDRESS

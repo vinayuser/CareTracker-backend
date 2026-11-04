@@ -1,7 +1,7 @@
 {
   "name": "caretracker-backend",
   "version": "1.0.0",
-  "description": "CareTraker admin API",
+  "description": "Caretraqer admin API",
   "main": "app.js",
   "engines": {
     "node": ">=24 <25"

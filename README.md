@@ -1,6 +1,6 @@
-# CareTraker Backend API
+# Caretraqer Backend API
 
-Node.js + Express + MongoDB backend for the CareTraker admin panel.
+Node.js + Express + MongoDB backend for the Caretraqer admin panel.
 
 Follows the same layered structure as the pool_game project:
 

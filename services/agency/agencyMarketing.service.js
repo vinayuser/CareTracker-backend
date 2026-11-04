@@ -151,7 +151,7 @@ const sendCampaign = async (req, body = {}) => {
 
   const subject = String(body.subject || '').trim();
   const html = String(body.html || '').trim();
-  const fromName = String(body.fromName || agency.name || 'CareTracker').trim();
+  const fromName = String(body.fromName || agency.name || 'Caretraqer').trim();
   const replyTo = String(body.fromEmail || body.replyTo || agency.email || '').trim();
   const incoming = Array.isArray(body.recipients) ? body.recipients : [];
   const blocked = await EmailPreferenceService.blockedEmails(

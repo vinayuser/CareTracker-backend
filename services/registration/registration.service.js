@@ -175,7 +175,7 @@ const notifyRegistrationComplete = async (req, {
       await NotificationService.notifyAccount(owner._id, {
         type: NotificationService.TYPES.REGISTRATION_COMPLETE,
         category: 'system',
-        title: 'Welcome to CareTraker',
+        title: 'Welcome to Caretraqer',
         body: `${agency.name} is registered on the ${plan?.name || 'subscription'} plan. Check your email for login details.`,
         tone: 'success',
         actionUrl: '/agency/dashboard',

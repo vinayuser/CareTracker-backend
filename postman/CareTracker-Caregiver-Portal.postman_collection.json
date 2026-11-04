@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "CareTracker - Caregiver Portal",
+    "name": "Caretraqer - Caregiver Portal",
     "_postman_id": "9b6a3f9d-2f5e-4256-8467-a11b569d55b4",
     "description": "APIs used by the Caregiver panel (`/caregiver/*`).\n\n**Setup**\n1. Set `baseUrl` (local: `http://localhost:3000/api`, prod: `https://caretraker.com/api/api`).\n2. Run **Auth \u2192 Login** with a caregiver email/userId + password \u2014 token is saved automatically.\n3. Fill `visitId`, `enrollmentId`, `leaveId` from list responses before calling detail/action endpoints.\n\nAll authenticated requests send `Authorization: Bearer {{token}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"

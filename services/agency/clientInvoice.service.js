@@ -368,7 +368,7 @@ const buildInvoicePdf = (invoice) => {
   const money = (value) => `$${Number(value || 0).toFixed(2)}`;
   const due = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('en-US') : '—';
   const lines = [
-    'CareTraker',
+    'Caretraqer',
     'INVOICE',
     '',
     `Invoice #: ${invoice.invoiceCode || ''}`,
@@ -425,7 +425,7 @@ const sendInvoice = async (req, id) => {
     to: invoice.clientEmail,
     candidateName: invoice.clientName || 'Client',
     agencyName: agency?.name || invoice.agencyName,
-    subject: `Invoice ${invoice.invoiceCode} from ${agency?.name || invoice.agencyName || 'CareTraker'}`,
+    subject: `Invoice ${invoice.invoiceCode} from ${agency?.name || invoice.agencyName || 'Caretraqer'}`,
     message: [
       `Please find your invoice ${invoice.invoiceCode} for ${invoice.periodFrom} to ${invoice.periodTo}.`,
       'The invoice PDF is attached to this email.',

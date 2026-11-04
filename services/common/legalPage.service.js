@@ -4,20 +4,20 @@ const DEFAULTS = {
   privacy: {
     slug: 'privacy',
     title: 'Privacy Policy',
-    content: `CareTraker Privacy Policy
+    content: `Caretraqer Privacy Policy
 
 Last updated: ${new Date().toISOString().slice(0, 10)}
 
-CareTraker ("we", "us", or "our") provides software for home care agencies. This Privacy Policy explains how we collect, use, and protect information when you use our website and platform.
+Caretraqer ("we", "us", or "our") provides software for home care agencies. This Privacy Policy explains how we collect, use, and protect information when you use our website and platform.
 
 1. Information we collect
 We may collect account details, contact information, and usage data needed to operate the platform and support agencies, caregivers, and clients.
 
 2. How we use information
-We use information to provide and improve CareTraker, communicate with you, support compliance workflows, and keep the service secure.
+We use information to provide and improve Caretraqer, communicate with you, support compliance workflows, and keep the service secure.
 
 3. Sharing
-We do not sell personal information. We may share data with service providers that help us run CareTraker, or when required by law.
+We do not sell personal information. We may share data with service providers that help us run Caretraqer, or when required by law.
 
 4. Security
 We use administrative, technical, and physical safeguards designed to protect information. No method of transmission over the internet is completely secure.
@@ -33,32 +33,32 @@ Replace this default text from the admin Legal Pages screen.`,
   terms: {
     slug: 'terms',
     title: 'Terms & Conditions',
-    content: `CareTraker Terms & Conditions
+    content: `Caretraqer Terms & Conditions
 
 Last updated: ${new Date().toISOString().slice(0, 10)}
 
-These Terms & Conditions govern your use of the CareTraker website and platform.
+These Terms & Conditions govern your use of the Caretraqer website and platform.
 
 1. Acceptance
-By accessing or using CareTraker, you agree to these terms. If you do not agree, do not use the service.
+By accessing or using Caretraqer, you agree to these terms. If you do not agree, do not use the service.
 
 2. Accounts
 You are responsible for maintaining the confidentiality of your login credentials and for activity under your account.
 
 3. Acceptable use
-You may use CareTraker only for lawful home care operations and must not misuse the platform, attempt unauthorized access, or interfere with other users.
+You may use Caretraqer only for lawful home care operations and must not misuse the platform, attempt unauthorized access, or interfere with other users.
 
 4. Agency data
-Agencies remain responsible for the accuracy of client, caregiver, and care records entered into CareTraker.
+Agencies remain responsible for the accuracy of client, caregiver, and care records entered into Caretraqer.
 
 5. Intellectual property
-CareTraker software, branding, and content are owned by CareTraker or its licensors and may not be copied without permission.
+Caretraqer software, branding, and content are owned by Caretraqer or its licensors and may not be copied without permission.
 
 6. Disclaimers
-CareTraker is provided on an "as available" basis. It is software for operational workflows and is not a substitute for professional clinical judgment.
+Caretraqer is provided on an "as available" basis. It is software for operational workflows and is not a substitute for professional clinical judgment.
 
 7. Limitation of liability
-To the fullest extent permitted by law, CareTraker is not liable for indirect, incidental, or consequential damages arising from use of the service.
+To the fullest extent permitted by law, Caretraqer is not liable for indirect, incidental, or consequential damages arising from use of the service.
 
 8. Changes
 We may update these terms. Continued use after changes means you accept the updated terms.

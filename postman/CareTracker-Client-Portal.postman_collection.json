@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "CareTracker - Client Portal",
+    "name": "Caretraqer - Client Portal",
     "_postman_id": "c4e8a1b2-7d3f-4a91-9e2c-6f8b5d0a1c47",
     "description": "APIs used by the Client panel (`/client/*`).\n\n**Setup**\n1. Set `baseUrl` (local: `http://localhost:3000/api`, prod: `https://caretraker.com/api/api`).\n2. Run **Auth → Login** with a client email/userId + password — token is saved automatically.\n3. Fill `carePlanId`, `caregiverId`, `enrollmentId` from list responses before calling detail/action endpoints.\n\nAll authenticated requests send `Authorization: Bearer {{token}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
