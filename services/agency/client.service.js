@@ -210,8 +210,13 @@ const update = async (req, id, payload) => {
   if (!doc) throw new Error(constants.MESSAGE.CLIENT.NOT_FOUND);
 
   const data = pickPayload(payload);
-  if (data.email) {
-    await assertEmailGloballyAvailable(data.email, { clientId: doc._id });
+  const nextEmail = data.email !== undefined ? String(data.email || '').trim().toLowerCase() : '';
+  const currentEmail = String(doc.email || '').trim().toLowerCase();
+  if (nextEmail && nextEmail !== currentEmail) {
+    await assertEmailGloballyAvailable(nextEmail, {
+      clientId: doc._id,
+      accountId: doc.accountId || undefined,
+    });
   }
   CLIENT_PAYLOAD_FIELDS.forEach((field) => {
     if (data[field] !== undefined) doc[field] = data[field];

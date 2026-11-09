@@ -19,6 +19,13 @@ const getAgencyId = (req) => {
   return agencyId;
 };
 
+const resolveAgencyName = async (agencyId) => {
+  if (!agencyId) return '';
+  if (agencyId.name) return agencyId.name;
+  const agency = await Model.AgencyModel.findById(agencyId).select('name');
+  return agency?.name || '';
+};
+
 const resolveJobContext = async (account, agencyId) => {
   if (account.sourceJobPostId) {
     const job = await Model.JobPostModel.findById(account.sourceJobPostId).select('jobTitle');
@@ -94,11 +101,12 @@ const maybeBackfillCaregiverLinks = async (account, context) => {
   if (dirty) await account.save();
 };
 
-const formatCaregiver = async (account, agencyId) => {
+const formatCaregiver = async (account, agencyId, agencyName = '') => {
   const client = functions.toClientDoc(account);
   if (!client) return null;
 
   client.agencyId = String(account.agencyId?._id || account.agencyId || '');
+  client.agencyName = agencyName || await resolveAgencyName(agencyId || account.agencyId);
   client.role = client.role || 'CAREGIVER';
 
   const jobContext = await resolveJobContext(account, agencyId);
@@ -192,7 +200,8 @@ const getAll = async (req, query = {}) => {
   }
 
   const list = await Model.AgencyAccountModel.find(filter).sort({ createdAt: -1 });
-  return Promise.all(list.map((account) => formatCaregiver(account, agencyId)));
+  const agencyName = await resolveAgencyName(agencyId);
+  return Promise.all(list.map((account) => formatCaregiver(account, agencyId, agencyName)));
 };
 
 const getById = async (req, id) => {

@@ -52,7 +52,13 @@ const assertEmailGloballyAvailable = async (email, exclude = {}) => {
     }).select('_id role'),
     Model.AgencyAccountModel.findOne({
       email: normalized,
-      ...(accountId ? { _id: { $ne: accountId } } : {}),
+      ...((accountId || clientId || candidateId) ? {
+        $nor: [
+          ...(accountId ? [{ _id: accountId }] : []),
+          ...(clientId ? [{ clientId }] : []),
+          ...(candidateId ? [{ candidateId }] : []),
+        ],
+      } : {}),
     }).select('_id role agencyId'),
     Model.HrStaffModel.findOne({
       email: normalized,
