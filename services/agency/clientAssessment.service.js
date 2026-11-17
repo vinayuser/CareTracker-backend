@@ -587,9 +587,11 @@ const update = async (req, id, payload) => {
   const agencyId = getAgencyId(req);
   const doc = await Model.ClientAssessmentModel.findOne({ _id: id, agencyId });
   if (!doc) throw new Error(constants.MESSAGE.ASSESSMENT.NOT_FOUND);
-  if (doc.status === 'Accepted') throw new Error(constants.MESSAGE.ASSESSMENT.ALREADY_ACCEPTED);
 
-  ['assessorName', 'assessorTitle', 'assessorPhoto', 'assessmentDate', 'assessmentTypes', 'formData', 'status'].forEach((field) => {
+  const fields = ['assessorName', 'assessorTitle', 'assessorPhoto', 'assessmentDate', 'assessmentTypes', 'formData'];
+  // After onboarding, keep Accepted so save does not rewind quote/onboard state.
+  if (doc.status !== 'Accepted') fields.push('status');
+  fields.forEach((field) => {
     if (payload[field] !== undefined) doc[field] = payload[field];
   });
 
@@ -600,10 +602,9 @@ const update = async (req, id, payload) => {
 
   await doc.save();
 
-  // Keep draft care-plan form in sync when assessment is edited after quote
   if (payload.formData && doc.carePlanId) {
     const plan = await Model.CarePlanModel.findOne({ _id: doc.carePlanId, agencyId });
-    if (plan && plan.quoteStatus !== 'Accepted') {
+    if (plan) {
       const seeded = mapAssessmentToCarePlanFormData(payload.formData, doc, req);
       const existing = plan.formData?.toObject?.() || plan.formData || {};
       plan.formData = {

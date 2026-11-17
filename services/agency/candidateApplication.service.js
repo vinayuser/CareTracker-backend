@@ -111,8 +111,8 @@ const formatCandidate = (doc) => {
     : '';
   client.source_id = client.sourceId || '';
   client.availability = doc.availability || 'Available';
-  client.profile_pic = buildUploadUrl(client.profilePicPath);
-  client.resume = buildUploadUrl(client.resumePath);
+  client.profile_pic = client.profilePicPath ? buildUploadUrl(client.profilePicPath) : '';
+  client.resume = client.resumePath ? buildUploadUrl(client.resumePath) : '';
   return client;
 };
 

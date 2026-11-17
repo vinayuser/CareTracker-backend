@@ -114,13 +114,15 @@ module.exports.buildDocumentTemplateUrl = function (relativePath, req) {
 
 /** Public URL for files under uploads/ (filled PDFs, resumes, etc.) via /api/uploads. */
 module.exports.buildUploadUrl = function (relativePath, req) {
-  let clean = String(relativePath || '').replace(/^\/+/, '');
+  let clean = String(relativePath || '').trim().replace(/^\/+/, '');
+  if (!clean) return '';
   if (clean.startsWith('uploads/')) {
     clean = clean.slice('uploads/'.length);
   }
   if (clean.startsWith('api/uploads/')) {
     clean = clean.slice('api/uploads/'.length);
   }
+  if (!clean) return '';
   const pathSuffix = `/api/uploads/${clean.split('/').map(encodeURIComponent).join('/')}`;
   const base = module.exports.getApiBaseUrl(req);
   return `${base}${pathSuffix}`;

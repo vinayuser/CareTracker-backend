@@ -12,10 +12,11 @@ const parseExperience = (value) => {
 };
 
 const buildUploadUrl = (storedPath) => {
-  if (!storedPath) return '';
-  let clean = String(storedPath).replace(/^\/+/, '');
+  if (!storedPath || !String(storedPath).trim()) return '';
+  let clean = String(storedPath).trim().replace(/^\/+/, '');
   if (clean.startsWith('uploads/')) clean = clean.slice('uploads/'.length);
   if (clean.startsWith('api/uploads/')) clean = clean.slice('api/uploads/'.length);
+  if (!clean) return '';
   return `/api/uploads/${clean}`;
 };
 
