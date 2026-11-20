@@ -172,6 +172,9 @@ router.get('/admin/marketing/mailchimp/lists', Auth.authenticate('super_admin'),
 router.get('/admin/marketing/platform-audience', Auth.authenticate('super_admin'), Controller.AdminMarketingController.getPlatformAudience);
 router.post('/admin/marketing/campaigns/send', Auth.authenticate('super_admin'), Controller.AdminMarketingController.sendCampaign);
 
+router.get('/admin/reports/operations/export/:key', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.exportOperationsReport);
+router.get('/admin/reports/operations/:key', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOperationsReport);
+router.get('/admin/reports/operations', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOperationsCatalog);
 router.get('/admin/reports/evv-summary/options', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.getOptions);
 router.get('/admin/reports/evv-summary/export', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.exportCsv);
 router.post('/admin/reports/evv-summary/reminder', Auth.authenticate('super_admin'), Controller.AdminEvvSummaryReportController.sendReminder);
@@ -378,6 +381,9 @@ router.post('/agency/invoices/:id/send', Auth.authenticate('agency_owner', 'hr')
 router.post('/agency/invoices/:id/paid', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.markPaid);
 router.post('/agency/invoices/:id/void', Auth.authenticate('agency_owner', 'hr'), Controller.ClientInvoiceController.void);
 
+router.get('/agency/reports/operations/export/:key', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportOperationsReport);
+router.get('/agency/reports/operations/:key', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getOperationsReport);
+router.get('/agency/reports/operations', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getOperationsCatalog);
 router.get('/agency/reports/evv-summary/options', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.getEvvSummaryOptions);
 router.get('/agency/reports/evv-summary/export', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.exportEvvSummary);
 router.post('/agency/reports/evv-summary/reminder', Auth.authenticate('agency_owner', 'hr'), Controller.AgencyReportsController.sendEvvSummaryReminder);

@@ -2,6 +2,7 @@ const constants = require('../../common/constants');
 const AdminEvvSummaryReportService = require('../../services/admin/adminEvvSummaryReport.service');
 const AdminTimeCardService = require('../../services/admin/adminTimeCard.service');
 const ReportReminderService = require('../../services/admin/reportReminder.service');
+const AgencyOperationsReportService = require('../../services/agency/agencyOperationsReport.service');
 
 const getAgencyId = (req) => {
   const account = req.agency_owner || req.hr;
@@ -89,6 +90,34 @@ module.exports.getTimeCardDetail = async (req, res, next) => {
   try {
     const data = await AdminTimeCardService.getDetail(req.params.id, scopedQuery(req));
     return res.success(constants.MESSAGE.SUCCESS, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getOperationsCatalog = async (req, res, next) => {
+  try {
+    return res.success(constants.MESSAGE.SUCCESS, { reports: AgencyOperationsReportService.listCatalog() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.getOperationsReport = async (req, res, next) => {
+  try {
+    const data = await AgencyOperationsReportService.runReport(getAgencyId(req), req.params.key, req.query);
+    return res.success(constants.MESSAGE.LIST, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports.exportOperationsReport = async (req, res, next) => {
+  try {
+    const { filename, csv } = await AgencyOperationsReportService.exportCsv(getAgencyId(req), req.params.key, req.query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
   } catch (error) {
     next(error);
   }
